@@ -1446,7 +1446,15 @@ html {
   #vbvRecMount .vbv-head-right { flex: 1 1 100%; flex-wrap: wrap; justify-content: space-between; row-gap: 8px; }
   #vbvRecMount .vbv-save-strip { height: auto; max-height: none; min-height: 40px; padding: 4px 12px; font-size: 16px; }
   #vbvRecMount .vbv-n-of-m { margin-left: auto; }
+  #vbvRecMount .vbv-head-right { min-height: 48px; } /* m3.4: room for the Saving strip is always kept, so the verse never moves when it comes and goes */
 }
+
+/* m3.4: Google Drive banner (Recorder) and Settings button */
+#vbvRec .vbvr-drive { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin: 0 0 12px; padding: 10px 14px; border: 2px solid #fff; border-radius: 12px; background: #111; }
+#vbvRec .vbvr-drive[hidden], #vbvRec .vbvr-drive-btn[hidden] { display: none; }
+#vbvRec .vbvr-drive p { margin: 0; flex: 1 1 260px; font-size: max(16px, var(--fs-32)); text-align: left; }
+#vbvRec .vbvr-drive .kjb-second { min-height: 56px; font-size: 18px; font-weight: 700; }
+.vbvr-drive-set { padding: 8px 0 12px; } .vbvr-drive-set p { margin: 0 0 8px; font-size: 16px; } .vbvr-drive-h { font-weight: 700; font-size: 18px !important; }
 
 /* ---- vbv-minfont.css ---- */
 /* Designer 18:25: no readable text below 16 CSS px at any size (phone included): tabs, banners, labels, status lines.
@@ -9161,7 +9169,17 @@ var VBVRec = (() => {
       root._vbvRo = null;
     }
     if (verseEl && model.verseText) {
-      const run = () => fitVerseText(verseEl, model.verseText);
+      // m3.4 (Builder-bot, Robin "jumpy text"): fit once per verse + panel width + orientation, then reuse the same size; never
+      // below 40 CSS px (the page's floor, applied here instead of fighting it from outside). Repaints and resize callbacks no longer re-fit.
+      const run = () => {
+        const key = model.verseText + "|" + (panel ? panel.clientWidth : 0) + "|" + (innerWidth > innerHeight ? "L" : "P") + innerWidth;
+        const hit = FIT_CACHE.get(key);
+        if (hit) { if (verseEl.style.fontSize !== hit[0]) verseEl.style.fontSize = hit[0]; if (verseEl.style.lineHeight !== hit[1]) verseEl.style.lineHeight = hit[1]; return; }
+        if (!panel || panel.clientWidth < 8) return;
+        fitVerseText(verseEl, model.verseText);
+        if (!(parseFloat(verseEl.style.fontSize) >= 40)) { verseEl.style.fontSize = "40px"; verseEl.style.lineHeight = "54px"; }
+        FIT_CACHE.set(key, [verseEl.style.fontSize, verseEl.style.lineHeight]);
+      };
       run();
       if (typeof requestAnimationFrame === "function") {
         requestAnimationFrame(() => requestAnimationFrame(run));
@@ -9173,6 +9191,7 @@ var VBVRec = (() => {
     }
     return root;
   }
+  const FIT_CACHE = /* @__PURE__ */ new Map();
   function bindRecorderView(containerEl, rec, opts = {}) {
     const paint = () => {
       const model = viewModel(rec, opts);
@@ -9189,7 +9208,13 @@ var VBVRec = (() => {
     let tick = 0;
     if (typeof window !== "undefined") {
       tick = setInterval(() => {
-        if (rec.state === V.RECORDING || rec.state === V.STARTING) paint();
+        if (rec.state !== V.RECORDING && rec.state !== V.STARTING) return;
+        // m3.4: while recording only the timer and the level move; the verse is not re-rendered on ticks
+        const t = containerEl.querySelector(".vbv-rec-timer"), f = containerEl.querySelector(".vbv-level-fill"), m = containerEl.querySelector(".vbv-level");
+        if (!t || !f) { paint(); return; }
+        const model = viewModel(rec, opts), pct = Math.round((model.level || 0) * 100);
+        if (t.textContent !== model.timer) t.textContent = model.timer;
+        f.style.width = pct + "%"; if (m) m.setAttribute("aria-valuenow", String(pct));
       }, 200);
     }
     return {
@@ -9641,6 +9666,289 @@ var VBVRec = (() => {
   return __toCommonJS(entry_exports);
 })();
 
+/* ---- vbv-drive.js ---- */
+/* VBV M4: Drive Save. The recorder's storage (§E) backed by Google Drive.
+   Writes only into 00 Inbox (by id). Exact whole-name match 'Book C.V.wav'. New file = one multipart/resumable create;
+   retake = media PATCH on the stored fileId. Before a create, the exact name is looked up in the Inbox and the
+   02 KJB verse audio book folders (by id chain) so a retake never duplicates. Queue lives in IndexedDB.
+   Uses only the page's existing token (drive.file + drive.metadata.readonly). Never logs a token or key. */
+(function () {
+  'use strict';
+  var INBOX = '1gTlRsu_nVCdeErA6uykcsGc3IikESxa2';
+  var ROOT = '1YztdP5Gd_3Is3SrQ7LXz588nhZXq_KAf';
+  var TOKEN_KEY = 'kjb1.google.token.v1';
+  var PICK_KEY = 'vbv.drive.inboxFolder.v1';
+  var API = 'https://www.googleapis.com/drive/v3/files';
+  var UP = 'https://www.googleapis.com/upload/drive/v3/files';
+  var FIELDS = 'id,name,parents,sha256Checksum,size,appProperties,properties';
+  var PICKER = {"appId": "456053541349", "key": "AIzaSyAJhoFJTyoEIMx00CmQRKVe7uOPD-lOhUQ"}; // filled at build time from the base page's own constants; never printed
+
+  function hex(buf) { return Array.prototype.map.call(new Uint8Array(buf), function (b) { return ('0' + b.toString(16)).slice(-2); }).join(''); }
+  function sha256(ab) { return crypto.subtle.digest('SHA-256', ab).then(hex); }
+  function err(kind, msg, extra) { var e = new Error(msg); e.kind = kind; if (extra) for (var k in extra) e[k] = extra[k]; return e; }
+
+  /* ---------- IndexedDB ---------- */
+  function idb() {
+    if (idb.p) return idb.p;
+    idb.p = new Promise(function (res, rej) {
+      var r = indexedDB.open('vbv.queue.v1', 1);
+      r.onupgradeneeded = function () { var d = r.result; if (!d.objectStoreNames.contains('takes')) d.createObjectStore('takes', { keyPath: 'id' }); if (!d.objectStoreNames.contains('files')) d.createObjectStore('files', { keyPath: 'id' }); };
+      r.onsuccess = function () { res(r.result); }; r.onerror = function () { rej(r.error); };
+    });
+    return idb.p;
+  }
+  function tx(store, mode, fn) { return idb().then(function (d) { return new Promise(function (res, rej) { var t = d.transaction(store, mode), s = t.objectStore(store), out; var q = fn(s); if (q) q.onsuccess = function () { out = q.result; }; t.oncomplete = function () { res(out); }; t.onerror = function () { rej(t.error); }; t.onabort = function () { rej(t.error); }; }); }); }
+  var put = function (store, v) { return tx(store, 'readwrite', function (s) { return s.put(v); }); };
+  var del = function (store, k) { return tx(store, 'readwrite', function (s) { return s.delete(k); }); };
+  var all = function (store) { return tx(store, 'readonly', function (s) { return s.getAll(); }); };
+  var get = function (store, k) { return tx(store, 'readonly', function (s) { return s.get(k); }); };
+
+  /* ---------- token + folder grant ---------- */
+  var badToken = null;
+  function token() {
+    try { var t = JSON.parse(localStorage.getItem(TOKEN_KEY) || 'null'); if (t && t.token && t.expiresAt > Date.now() + 30000 && t.token !== badToken) return t.token; } catch (e) {}
+    return null;
+  }
+  function inboxGranted() { try { return localStorage.getItem(PICK_KEY) === INBOX; } catch (e) { return false; } }
+
+  /* ---------- HTTP ---------- */
+  function call(method, url, tok, body, headers) {
+    var h = { Authorization: 'Bearer ' + tok }; if (headers) for (var k in headers) h[k] = headers[k];
+    return fetch(url, { method: method, headers: h, body: body }).then(function (r) {
+      if (r.ok) return r;
+      return r.text().then(function (t) {
+        var reason = ''; try { var j = JSON.parse(t); reason = (j.error && j.error.errors && j.error.errors[0] && j.error.errors[0].reason) || (j.error && j.error.status) || ''; } catch (e) {}
+        throw err(r.status === 401 ? 'auth' : 'http', 'Drive answered ' + r.status + (reason ? ' (' + reason + ')' : ''), { status: r.status, reason: reason });
+      });
+    }, function () { throw err('offline', 'No connection to Google Drive'); });
+  }
+  function json(r) { return r.json(); }
+  function esc(s) { return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
+
+  function createStorage(opts) {
+    opts = opts || {};
+    // same policy as KJBVR src/save/retry.js: 3 attempts in all, 2 s then 4 s (then 8 s if the cap is raised); auth never auto-retries.
+    // The recorder itself never retries (it only calls retry() on Try again), so there is one retry loop, here.
+    var maxTries = opts.maxAutoRetries || 3, baseMs = opts.retryDelayMs || 2000;
+    var bigBytes = opts.resumableOver || 4.5 * 1024 * 1024;
+    var refOf = opts.refOf || function (id) { return id; };
+    var items = new Map(), files = new Map(), listeners = [], savedCbs = [], busy = false, stopped = false, timer = 0, parentCache = new Map();
+    var ready = Promise.all([all('takes'), all('files')]).then(function (r) {
+      (r[1] || []).forEach(function (f) { files.set(f.id, f); });
+      (r[0] || []).forEach(function (t) { if (t.state !== 'saved' && !items.has(t.id)) { t.state = t.state === 'needs-signin' ? 'needs-signin' : 'saving'; t.tries = 0; t.nextAt = 0; items.set(t.id, t); } });
+      emit(); kick();
+    }).catch(function () { emit(); });
+
+    function pub(t) { return { id: t.id, file: t.file, state: t.state, tries: t.tries, error: t.error || null, at: t.at, drive_id: t.drive_id || null, sha256: t.sha256, why: t.why || null }; }
+    function queue() { return Array.from(items.values()).map(pub); }
+    function emit() { var q = queue(); listeners.slice().forEach(function (f) { try { f(q); } catch (e) {} }); }
+    function persist(t) { return put('takes', t).catch(function () {}); }
+    function set(t, state, error, why) { t.state = state; t.error = error || null; t.why = why || null; persist(t); emit(); }
+
+    function saveVerse(id, wav, meta) {
+      meta = meta || {};
+      var gate = meta.gate && meta.gate.overall;
+      if (gate !== 'PASS' && gate !== 'WARN-OK' && gate !== 'WARN') return Promise.reject(err('refused', 'A take that failed the check is never saved'));
+      var ab = wav instanceof ArrayBuffer ? wav : (wav.buffer ? wav.buffer.slice(wav.byteOffset, wav.byteOffset + wav.byteLength) : wav);
+      return sha256(ab).then(function (sum) {
+        var prev = items.get(id);
+        var t = { id: id, file: meta.file || (refOf(id) + '.wav'), wav: ab, sha256: sum, meta: meta, gate: gate === 'WARN' ? 'WARN-OK' : gate,
+          state: 'saving', tries: 0, nextAt: 0, at: new Date().toISOString(), seq: Math.max((prev && prev.seq) || 0, (files.get(id) || {}).rev || 0) + 1, drive_id: (files.get(id) || {}).fileId || null };
+        items.set(id, t);
+        return put('takes', t).then(function () { emit(); kick(); return { queued: true, sha256: sum }; });
+      });
+    }
+
+    function next() { var now = Date.now(), best = null; items.forEach(function (t) { if (t.state === 'saving' && (t.nextAt || 0) <= now && !best) best = t; }); return best; }
+    function kick() {
+      if (busy || stopped) return;
+      var t = next(); if (!t) return;
+      busy = true;
+      var seq = t.seq;
+      upload(t).then(function (r) {
+        busy = false;
+        if (items.get(t.id) !== t || t.seq !== seq) { kick(); return; } // a newer take replaced it while uploading: it uploads next (PATCH)
+        t.drive_id = r.fileId; files.set(t.id, { id: t.id, fileId: r.fileId, sha256: r.sha256, at: t.at, rev: t.seq, file: t.file });
+        put('files', files.get(t.id)).catch(function () {});
+        delete t.wav; t.state = 'saved'; t.error = null; t.why = null; del('takes', t.id).catch(function () {}); emit();
+        var m = t.meta || {};
+        var h = { id: t.id, ref: refOf(t.id), file: t.file, drive_id: r.fileId, sha256: t.sha256, bytes: r.bytes, duration_s: m.duration_s, speech_start_s: m.speech_start_s, speech_end_s: m.speech_end_s, gate: t.gate, take_at: m.take_at, retake: !!m.retake, resampled: !!m.resampled, replaced: r.replaced };
+        savedCbs.slice().forEach(function (f) { try { f(h); } catch (e) {} });
+        kick();
+      }, function (e) {
+        busy = false;
+        if (items.get(t.id) !== t) { kick(); return; }
+        if (e.kind === 'auth' || e.kind === 'signin' || e.kind === 'folder') {
+          if (e.kind === 'auth') badToken = e.token || badToken;
+          // every waiting take needs the same sign-in
+          items.forEach(function (x) { if (x.state === 'saving' || x === t) set(x, 'needs-signin', e.message, e.kind === 'folder' ? 'folder' : 'signin'); });
+          return;
+        }
+        t.tries++;
+        var auto = e.kind !== 'final' && e.kind !== 'refused' && t.tries < maxTries;
+        set(t, 'failed', e.message, e.kind);
+        if (auto) { t.retryAt = Date.now() + baseMs * Math.pow(2, t.tries - 1); schedule(); }
+        kick();
+      });
+    }
+    function schedule() {
+      clearTimeout(timer); var soon = Infinity;
+      items.forEach(function (t) { if (t.state === 'failed' && t.retryAt && t.retryAt < soon) soon = t.retryAt; });
+      if (soon === Infinity) return;
+      timer = setTimeout(function () { var now = Date.now(); items.forEach(function (t) { if (t.state === 'failed' && t.retryAt && t.retryAt <= now + 20) { t.retryAt = 0; set(t, 'saving'); } }); schedule(); kick(); }, Math.max(0, soon - Date.now()));
+    }
+
+    /* ---------- Drive steps ---------- */
+    function parentsOf(id, tok) {
+      if (parentCache.has(id)) return Promise.resolve(parentCache.get(id));
+      return call('GET', API + '/' + encodeURIComponent(id) + '?fields=id,parents&supportsAllDrives=true', tok).then(json).then(function (j) { var p = j.parents || []; parentCache.set(id, p); return p; }, function (e) { if (e.kind === 'http' && e.status === 404) return []; throw e; });
+    }
+    // is folder id the Inbox, or a book folder inside 02 KJB verse audio (book -> OT/NT -> root), matched by id only
+    function inTree(folder, tok, depth) {
+      if (folder === INBOX || folder === ROOT) return Promise.resolve(true);
+      if (depth >= 3) return Promise.resolve(false);
+      return parentsOf(folder, tok).then(function (ps) {
+        var i = 0; function step() { if (i >= ps.length) return false; return inTree(ps[i++], tok, depth + 1).then(function (ok) { return ok || step(); }); } return step();
+      });
+    }
+    function lookup(name, id, tok, skip) {
+      var q = "name = '" + esc(name) + "' and trashed = false";
+      var url = API + '?q=' + encodeURIComponent(q) + '&fields=' + encodeURIComponent('files(id,name,parents,modifiedTime,appProperties,properties)') + '&pageSize=50&spaces=drive&supportsAllDrives=true&includeItemsFromAllDrives=true';
+      return call('GET', url, tok).then(json).then(function (j) {
+        var hits = (j.files || []).filter(function (f) { return f.name === name && f.id !== skip; }); // whole-name match only, never a prefix
+        var ok = [], i = 0;
+        function step() {
+          if (i >= hits.length) return ok;
+          var f = hits[i++], ps = f.parents || [], k = 0;
+          function p() { if (k >= ps.length) return false; return inTree(ps[k++], tok, 0).then(function (y) { return y || p(); }); }
+          return Promise.resolve(p()).then(function (y) { if (y) ok.push(f); return step(); });
+        }
+        return Promise.resolve(step()).then(function (list) {
+          list.sort(function (a, b) {
+            var av = ((a.appProperties || {}).vbv_id === id || (a.properties || {}).vbv_id === id) ? 1 : 0, bv = ((b.appProperties || {}).vbv_id === id || (b.properties || {}).vbv_id === id) ? 1 : 0;
+            return bv - av || String(b.modifiedTime || '').localeCompare(String(a.modifiedTime || ''));
+          });
+          return list;
+        });
+      });
+    }
+    function props(t) {
+      var p = (window.KJBVR && KJBVR.verseProperties) ? KJBVR.verseProperties({ id: t.id, sha256: t.sha256, takeAt: (t.meta && t.meta.take_at) || t.at, gate: t.gate, rev: t.seq, trim: 'half' }) : {};
+      // INTERFACES' seven keys minus vbv_stitch_req (withdrawn by CoS 18:31; stitching is automatic), so six are written
+      var out = { vbv_id: t.id, vbv_sha256: t.sha256, vbv_take_at: (t.meta && t.meta.take_at) || t.at, vbv_gate: t.gate, vbv_rev: String(t.seq), vbv_trim: 'half' };
+      for (var k in p) if (k !== 'vbv_stitch_req' && p[k] != null) out[k] = String(p[k]);
+      return out;
+    }
+    function multipart(meta, ab) {
+      var b = 'vbv' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+      var head = '--' + b + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(meta) + '\r\n--' + b + '\r\nContent-Type: audio/wav\r\n\r\n';
+      return { body: new Blob([head, ab, '\r\n--' + b + '--']), type: 'multipart/related; boundary=' + b };
+    }
+    function send(method, fileId, meta, t, tok) {
+      var base = UP + (fileId ? '/' + encodeURIComponent(fileId) : '');
+      var qs = '&fields=' + encodeURIComponent(FIELDS) + '&supportsAllDrives=true';
+      if (t.wav.byteLength <= bigBytes) {
+        var mp = multipart(meta, t.wav);
+        return call(method, base + '?uploadType=multipart' + qs, tok, mp.body, { 'Content-Type': mp.type }).then(json);
+      }
+      return call(method, base + '?uploadType=resumable' + qs, tok, JSON.stringify(meta), { 'Content-Type': 'application/json; charset=UTF-8', 'X-Upload-Content-Type': 'audio/wav', 'X-Upload-Content-Length': String(t.wav.byteLength) })
+        .then(function (r) { var loc = r.headers.get('Location'); if (!loc) throw err('http', 'Drive gave no upload address'); return call('PUT', loc, tok, new Blob([t.wav]), { 'Content-Type': 'audio/wav' }).then(json); });
+    }
+    function verify(res, t, tok) {
+      var got = res.sha256Checksum ? Promise.resolve(res) : call('GET', API + '/' + encodeURIComponent(res.id) + '?fields=id,sha256Checksum,size&supportsAllDrives=true', tok).then(json).catch(function () { return {}; });
+      return got.then(function (g) {
+        if (g.sha256Checksum && g.sha256Checksum.toLowerCase() !== t.sha256) throw err('checksum', 'Saved file did not match the take (checksum)');
+        return { fileId: res.id, sha256: t.sha256, verified: !!g.sha256Checksum, bytes: Number(g.size || res.size || t.wav.byteLength) };
+      });
+    }
+    function upload(t) {
+      var tok = token();
+      if (!tok) return Promise.reject(err('signin', 'Google sign-in has run out'));
+      if (!inboxGranted()) return Promise.reject(err('folder', 'Choose the 00 Inbox folder once'));
+      var meta = props(t);
+      function wrap(e) { if (e && e.kind === 'auth') e.token = tok; throw e; }
+      function patch(fileId) {
+        return send('PATCH', fileId, { appProperties: meta, properties: meta, mimeType: 'audio/wav' }, t, tok).then(function (res) { return verify(res, t, tok); }).then(function (r) { r.replaced = true; return r; });
+      }
+      function create() {
+        return send('POST', null, { name: t.file, parents: [INBOX], mimeType: 'audio/wav', appProperties: meta, properties: meta }, t, tok)
+          .then(function (res) { return verify(res, t, tok).then(function (r) { r.replaced = false; return r; }); })
+          .catch(function (e) { if (e.kind === 'http' && e.status === 404) { try { localStorage.removeItem(PICK_KEY); } catch (x) {} throw err('folder', 'Choose the 00 Inbox folder once'); } throw e; });
+      }
+      function viaLookup(skip) {
+        return lookup(t.file, t.id, tok, skip).then(function (list) { return list.length ? patch(list[0].id) : create(); });
+      }
+      var known = (files.get(t.id) || {}).fileId;
+      var p = known ? patch(known).catch(function (e) { if (e.kind === 'http' && e.status === 404) { files.delete(t.id); del('files', t.id).catch(function () {}); return viaLookup(known); } throw e; }) : viaLookup(null);
+      return p.catch(function (e) {
+        if (e.kind === 'http' && e.status === 403 && /insufficient|forbidden|appNotAuthorized|cannotModify/i.test(e.reason || '')) throw err('final', 'This page may not replace that file in Drive (it was not made here)', { status: 403 });
+        throw e;
+      }).catch(wrap);
+    }
+
+    function retry(id, auto) {
+      items.forEach(function (t) { if (auto && t.why === 'final') return; if ((id == null || t.id === id) && (t.state === 'failed' || t.state === 'needs-signin')) { t.retryAt = 0; t.tries = 0; set(t, 'saving'); } });
+      kick();
+    }
+    window.addEventListener('online', function () { retry(null, true); });
+    if (window.KJB && KJB.on) KJB.on('google-token', function () { badToken = null; items.forEach(function (t) { if (t.state === 'needs-signin' && (t.why !== 'folder' || inboxGranted())) set(t, 'saving'); }); kick(); });
+
+    return {
+      kind: 'drive', ready: ready,
+      saveVerse: saveVerse,
+      pending: function () { var n = 0; items.forEach(function (t) { if (t.state !== 'saved') n++; }); return n; },
+      queue: queue,
+      onQueueChange: function (f) { listeners.push(f); return function () { listeners = listeners.filter(function (x) { return x !== f; }); }; },
+      onVerseSaved: function (f) { savedCbs.push(f); return function () { savedCbs = savedCbs.filter(function (x) { return x !== f; }); }; },
+      stateOf: function (id) { var t = items.get(id); if (t) return t.state === 'saved' ? 'saved' : t.state === 'saving' ? 'saving' : 'not-saved'; return files.has(id) ? 'saved' : null; },
+      fileIdOf: function (id) { return (files.get(id) || {}).fileId || null; },
+      retry: retry,
+      needsSignIn: function () { var n = false; items.forEach(function (t) { if (t.state === 'needs-signin') n = t.why || 'signin'; }); return n; },
+      getVerse: function (id) { var t = items.get(id); if (t && t.wav) return Promise.resolve(t.wav); return get('takes', id).then(function (r) { return r && r.wav ? r.wav : null; }); },
+      listUnit: function () { return Promise.resolve(Array.from(files.values())); },
+      readUnitStatus: function () { return Promise.resolve(null); },
+      stop: function () { stopped = true; clearTimeout(timer); },
+    };
+  }
+
+  /* ---------- Sign in again (needs a click) ---------- */
+  function pickInbox() {
+    return new Promise(function (res, rej) {
+      var tok = token(); if (!tok) return rej(err('signin', 'Sign in first'));
+      var cfg = typeof PICKER === 'object' ? PICKER : null; if (!cfg || !cfg.key) return rej(err('setup', 'Picker is not set up on this page'));
+      KJB.google.loadGapi().then(function () {
+        gapi.load('picker', { callback: function () {
+          try {
+            var view = new google.picker.DocsView(google.picker.ViewId.FOLDERS).setIncludeFolders(true).setSelectFolderEnabled(true).setMimeTypes('application/vnd.google-apps.folder');
+            if (view.setParent) view.setParent(ROOT);
+            new google.picker.PickerBuilder().setAppId(cfg.appId).setDeveloperKey(cfg.key).setOAuthToken(tok).addView(view)
+              .setTitle('Choose the folder named 00 Inbox (inside 02 KJB verse audio)')
+              .setCallback(function (d) {
+                if (d.action === google.picker.Action.CANCEL) return rej(err('cancel', 'No folder chosen'));
+                if (d.action !== google.picker.Action.PICKED) return;
+                var doc = (d.docs || [])[0] || {};
+                if (doc.id !== INBOX) return rej(err('wrong', 'That is not the 00 Inbox folder. Choose 00 Inbox inside 02 KJB verse audio.'));
+                try { localStorage.setItem(PICK_KEY, INBOX); } catch (e) {}
+                res(INBOX);
+              }).build().setVisible(true);
+          } catch (e) { rej(err('setup', 'Google Picker could not open')); }
+        }, onerror: function () { rej(err('setup', 'Google Picker could not load')); } });
+      }, function () { rej(err('setup', 'Google Picker could not load')); });
+    });
+  }
+  function signInAgain() {
+    return new Promise(function (res, rej) {
+      if (token()) return res(true);
+      KJB.google.loadGis().then(function () {
+        var c = KJB.google.tokenClient({ who: 'vbv', callback: function (r) { if (r && r.access_token) res(true); else rej(err('signin', 'Sign-in did not finish')); }, error_callback: function () { rej(err('signin', 'Sign-in did not finish')); } });
+        c.requestAccessToken({ prompt: '' });
+      }, function () { rej(err('setup', 'Google sign-in could not load')); });
+    }).then(function () { badToken = null; return inboxGranted() ? INBOX : pickInbox(); });
+  }
+
+  window.VBVDrive = { createStorage: createStorage, signInAgain: signInAgain, pickInbox: pickInbox, inboxGranted: inboxGranted, INBOX: INBOX, ROOT: ROOT, PICK_KEY: PICK_KEY };
+})();
+
 /* ---- vbv-recorder-shell.js ---- */
 /* VBV M3 (Builder-bot): KJBVR's verse recorder (screens 03, 03b, strip, 04, 05) mounted in the Recorder tab as "Verse by verse".
    The passage recorder stays as "Whole passage", unchanged. Storage for M3 is a LOCAL FAKE (KJBVR's createMemoryStorage behind the
@@ -9664,13 +9972,15 @@ var VBVRec = (() => {
       gate: h.gate && h.gate.overall || prev.gate || 'PASS', rev: (prev.rev | 0) || 1, trim: TRIM });
   }
   function makeInner(opts) {
-    var s = R.createMemoryStorage(Object.assign({ delay: 700, retryDelayMs: 5000, maxAutoRetries: 2 }, opts || {}));
-    s.onVerseSaved = onSaved;
-    s.onQueueChange(function () { pushSaveStates(); qListeners.forEach(function (f) { try { f(); } catch (e) {} }); });
+    opts = opts || {};
+    var s;
+    if (window.VBVDrive && !opts.fake) { // m3.4 (Robin 20:48): real Drive save into 00 Inbox (vbv-drive.js); background upload, retakes overwrite the same fileId
+      s = VBVDrive.createStorage(Object.assign({ refOf: R.refOf }, opts)); s.onVerseSaved(onSaved);
+    } else { s = R.createMemoryStorage(Object.assign({ delay: 700, retryDelayMs: 5000, maxAutoRetries: 2 }, opts)); s.onVerseSaved = onSaved; }
+    s.onQueueChange(function () { pushSaveStates(); qListeners.forEach(function (f) { try { f(); } catch (e) {} }); if (VBV.driveBanner) VBV.driveBanner(); });
     return s;
   }
   storage = {
-    kind: 'm3-local-fake',
     saveVerse: function (id, wav, meta) { return inner.saveVerse(id, wav, meta); },
     pending: function () { return inner.pending(); }, queue: function () { return inner.queue(); },
     stateOf: function (id) { return inner.stateOf(id); }, retry: function (id) { return inner.retry(id); },
@@ -9678,7 +9988,9 @@ var VBVRec = (() => {
     getVerse: function (id) { return inner.getVerse && inner.getVerse(id); }, setVerseProps: function (id, p) { return inner.setVerseProps && inner.setVerseProps(id, p); },
     listUnit: function () { return inner.listUnit ? inner.listUnit.apply(inner, arguments) : []; },
     readUnitStatus: function () { return null; },
-    get fileIds() { return inner.fileIds; }, get files() { return inner.files; },
+    get fileIds() { return inner.fileIds; }, get files() { return inner.files; }, get kind() { return inner.kind || 'm3-local-fake'; },
+    fileIdOf: function (id) { return inner.fileIdOf ? inner.fileIdOf(id) : (inner.fileIds && inner.fileIds.get(id)) || null; },
+    needsSignIn: function () { return inner.needsSignIn ? inner.needsSignIn() : false; },
     stop: function () {} // a unit switch or tab change never stops the upload queue
   };
   var lastStates = {};
@@ -9788,6 +10100,50 @@ var VBVRec = (() => {
   new MutationObserver(function (m) { if (m.some(function (x) { return x.target !== bar && !bar.contains(x.target); })) updateBar(); }).observe(mountEl, { childList: true, subtree: true });
   VBV.justSaved = function () { return justSaved; };
 
+  // ---------- m3.4: Google Drive connection (the page's own sign-in + Picker; the token stays in localStorage with its expiry) ----------
+  function tokenOk() { try { var t = JSON.parse(localStorage.getItem('kjb1.google.token.v1') || 'null'); return !!(t && t.token && t.expiresAt > Date.now() + 30000); } catch (e) { return false; } }
+  function driveOn() { return !!window.VBVDrive && storage.kind === 'drive'; }
+  var connecting = false;
+  function connectDrive() {
+    if (!window.VBVDrive || connecting) return; connecting = true; driveBanner('Connecting to Google Drive\u2026');
+    VBVDrive.signInAgain().then(function () { connecting = false; storage.retry(); driveBanner(); },
+      function (e) { connecting = false; driveBanner(e && e.kind === 'cancel' ? 'No folder chosen. Tap Connect Google Drive and choose 00 Inbox.' : (e && e.message) || 'Google Drive did not connect. Try again.'); });
+  }
+  VBV.connectDrive = connectDrive;
+  var banner = document.createElement('div'); banner.className = 'vbvr-drive'; banner.setAttribute('role', 'status'); banner.hidden = true;
+  var bText = document.createElement('p'), bBtn = document.createElement('button'); bBtn.type = 'button'; bBtn.className = 'kjb-second vbvr-drive-btn';
+  banner.appendChild(bText); banner.appendChild(bBtn); bBtn.addEventListener('click', connectDrive);
+  if (mountEl.parentNode) mountEl.parentNode.insertBefore(banner, mountEl);
+  var setBox = null;
+  function addSettings() { // Settings & info (Recorder): a small Connect Google Drive button (the drawer can appear after the Recorder mounts)
+    if (setBox && setBox.isConnected) return;
+    var body = document.querySelector('#drawer-recorder .kjb-dbody'); if (!body) return;
+    setBox = document.createElement('div'); setBox.className = 'kjb-sec vbvr-drive-set';
+    var h = document.createElement('p'); h.className = 'vbvr-drive-h'; h.textContent = 'Google Drive (verse by verse)';
+    var st = document.createElement('p'); st.className = 'kjb-muted vbvr-drive-st';
+    var b = document.createElement('button'); b.type = 'button'; b.className = 'kjb-second vbvr-drive-connect'; b.textContent = 'Connect Google Drive';
+    b.addEventListener('click', connectDrive); setBox.appendChild(h); setBox.appendChild(st); setBox.appendChild(b);
+    body.insertBefore(setBox, body.querySelector('.kjb-sec') || null);
+  }
+  function driveBanner(msg) {
+    if (!driveOn()) { banner.hidden = true; return; }
+    addSettings();
+    var tok = tokenOk(), granted = VBVDrive.inboxGranted(), need = storage.needsSignIn();
+    var txt = '', btn = '';
+    if (msg) { txt = msg; btn = connecting ? '' : 'Connect Google Drive'; }
+    else if (!tok && (granted || need)) { txt = 'Google sign-in has run out. Recorded verses wait on this iPad until you sign in again.'; btn = 'Sign in again'; }
+    else if (!tok || !granted) { txt = 'Google Drive is not connected. Recorded verses wait on this iPad until you connect.'; btn = 'Connect Google Drive'; }
+    else if (need) { txt = 'Google Drive needs you to sign in again.'; btn = 'Sign in again'; }
+    banner.hidden = !txt; bText.textContent = txt; bBtn.textContent = btn; bBtn.hidden = !btn; bBtn.disabled = connecting;
+    if (setBox) { setBox.querySelector('.vbvr-drive-st').textContent = tok && granted ? 'Connected. Each verse is saved to 00 Inbox as it is recorded.' : 'Not connected. Verses wait on this device until you connect.';
+      var cb = setBox.querySelector('.vbvr-drive-connect'); cb.textContent = tok && granted ? 'Connect again' : 'Connect Google Drive'; cb.disabled = connecting; }
+  }
+  VBV.driveBanner = function () { driveBanner(); };
+  if (KJB.on) { KJB.on('google-token', function () { driveBanner(); }); KJB.on('tab', function (t) { if (t === 'recorder') driveBanner(); }); }
+  setInterval(function () { if (!connecting) driveBanner(); }, 30000);
+  if (window.VBVDrive && KJB.google) { var pre = function () { KJB.google.loadGis().catch(function () {}); KJB.google.loadGapi().catch(function () {}); }; if (KJB.on) KJB.on('tab', function (t) { if (t === 'recorder') pre(); }); }
+  driveBanner();
+
   // ---------- mounting a unit ----------
   function textFor(ids) { var m = new Map(); ids.forEach(function (id) { m.set(id, VBV.verseText(id)); }); return new R.TextSource(m, 'verified KJV (embedded)'); }
   function openVerseRecorder(unit, fromId) {
@@ -9808,7 +10164,7 @@ var VBVRec = (() => {
         text: textFor(unit.ids), storage: storage, store: store, trimPreset: TRIM,
         autoSave: true, // m3.2 (Robin 20:18): Stop makes the clean take, saves it (PASS / WARN-OK only) and moves to the next verse; a FAIL stays for Record again
         openMic: function (o) { return (micFactory || R.openMicInline)(o); },
-        shell: { promptSignIn: function () { KJB.guardSay('Sign in comes with the Drive upload (M4).'); } },
+        shell: { promptSignIn: function () { connectDrive(); } },
         onTakeAccepted: function (h) { // Stop saved the take (m3.2): the verse is recorded now; the upload carries on in the background
           justSaved = h.id; setTimeout(updateBar, 0);
           var prev = VBVStages.get(h.id) || {};
