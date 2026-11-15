@@ -7104,6 +7104,22 @@ var VBVRec = (() => {
     const live = Array.from(db).filter((v) => v > -110);
     return live.length ? percentile(live, ONSET.floorPercentile) : -110;
   }
+  /** m3.8: noise floor from the pre-gain signal in true silence (lead-in or tail, not speech). */
+  function silenceFloor(samples, sr, a, dropTailMs) {
+    const margin = Math.round(sr * 0.02), need = Math.round(sr * 0.08), drop = Math.round(sr * (dropTailMs || 0) / 1e3);
+    const parts = [];
+    const leadEnd = Math.max(0, (a.onsetSample || 0) - margin);
+    if (leadEnd >= need) parts.push(samples.subarray(0, leadEnd));
+    const tailStart = Math.min(samples.length, (a.offsetSample || samples.length) + margin);
+    const tailEnd = Math.max(tailStart, samples.length - drop);
+    if (tailEnd - tailStart >= need) parts.push(samples.subarray(tailStart, tailEnd));
+    if (!parts.length) return a.floorDb;
+    let n = 0; for (const p of parts) n += p.length;
+    const cal = new Float32Array(n);
+    let o = 0; for (const p of parts) { cal.set(p, o); o += p.length; }
+    const fl = calibrateFloor(cal, sr);
+    return Number.isFinite(fl) ? fl : a.floorDb;
+  }
   function analyseTake(samples, sr, opts = {}) {
     const C = { ...ONSET, ...opts.params || {} };
     const usable = opts.dropTailMs ? Math.max(0, samples.length - Math.round(sr * opts.dropTailMs / 1e3)) : samples.length;
@@ -7758,7 +7774,8 @@ var VBVRec = (() => {
     let cst = clipped === 0 ? PASS : maxRun >= gate.clipMaxRun || ratio > gate.clipMaxRatio ? FAIL : WARN;
     if (meta && meta.rawClipRun >= gate.clipMaxRun) cst = FAIL;
     c.clipping = { value: clipped, max_run: Math.max(maxRun, meta?.rawClipRun || 0), status: cst };
-    const fl = a.floorDb, snr = a.snrDb;
+    const fl = meta && meta.floorDb != null && Number.isFinite(meta.floorDb) ? meta.floorDb : a.floorDb;
+    const snr = meta && meta.snrDb != null && Number.isFinite(meta.snrDb) ? meta.snrDb : a.snrDb;
     const fst = fl <= gate.floorPassMax ? PASS : WARN; // m3.6: at most WARN
     const sst = snr >= gate.snrPassMin ? PASS : snr >= gate.snrWarnMin ? WARN : FAIL;
     c.noise_floor = { value: r3(fl), status: fst };
@@ -8087,8 +8104,11 @@ var VBVRec = (() => {
   function snipVerse(raw, sr, { calibration = null, dropTailMs, words = null, resampled = false, onset = ONSET, gate } = {}) {
     const C = onset || ONSET;
     const G = gate || gateFor(C.preset || DEFAULT_TRIM_PRESET);
-    const a = analyseTake(raw, sr, { calibration, dropTailMs: dropTailMs ?? C.stopTapDropMs, params: C });
+    const dropTail = dropTailMs ?? C.stopTapDropMs;
+    const a = analyseTake(raw, sr, { calibration, dropTailMs: dropTail, params: C });
     if (!a.speech) return { noSpeech: true };
+    const sil = silenceFloor(raw, sr, a, dropTail);
+    if (Number.isFinite(sil)) { a.floorDb = sil; if (a.speechDb != null) a.snrDb = a.speechDb - sil; }
     let run = 0, rawClipRun = 0;
     for (const v of raw) {
       if (Math.abs(v) >= 0.999) {
@@ -8100,7 +8120,7 @@ var VBVRec = (() => {
     const rawPkLin = peak(trimmed), rawPeakDb = rawPkLin > 0 ? 20 * Math.log10(rawPkLin) : -200;
     const norm2 = normalize(trimmed, sr);
     const wav = encodeWav(norm2.samples, sr);
-    const checks = checkVerse(decodeWav(wav), { words, meta: { rawClipRun, rawPeakDb }, gate: G });
+    const checks = checkVerse(decodeWav(wav), { words, meta: { rawClipRun, rawPeakDb, floorDb: a.floorDb, snrDb: a.snrDb }, gate: G });
     const fa = checks._analysis;
     delete checks._analysis;
     const hardFail = Object.values(checks).some((c) => c.status === "FAIL");
