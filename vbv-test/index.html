@@ -1412,7 +1412,11 @@ html {
 /* 16 CSS px floor: KJBVR's 28-mock-px text is 14 px at --scale .5. */
 #vbvRecMount { --fs-28: max(16px, calc(28 * var(--scale) * 1px)); --fs-32: max(16px, calc(32 * var(--scale) * 1px)); }
 #vbvRecMount .vbv-verse { text-align: left; word-spacing: normal; }
-#vbvRecMount .vbv-verse-panel.vbvr-clamped { overflow-y: auto; }
+/* m3.6: the verse panel scrolls by touch when the verse is longer than the box (nothing is cut off); the cue is an overlay and never changes the layout */
+#vbvRecMount .vbv-verse-panel { overflow-x: hidden; overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y; overscroll-behavior: contain; position: relative; }
+#vbvRecMount .vbvr-more { position: sticky; bottom: 0; height: 0; overflow: visible; pointer-events: none; }
+#vbvRecMount .vbvr-more > span { position: absolute; right: 0; bottom: 0; padding: 4px 14px; font-size: 18px; font-weight: 700; line-height: 1.3; white-space: nowrap; color: #000; background: #fff; border-radius: 999px; visibility: hidden; }
+#vbvRecMount .vbvr-more.is-on > span { visibility: visible; }
 #vbvRecMount .vbv-save-strip, #vbvRecMount .vbv-strip-word, #vbvRecMount .vbv-gate-status { white-space: nowrap; }
 @media (max-width: 600px) {
   #vbvRecMount { width: auto; margin-left: 0; }
@@ -7337,6 +7341,7 @@ var VBVRec = (() => {
     silenceWarnMax: 4,
     lufsPassTol: 1,
     lufsWarnTol: 8,
+    silentPeakDb: -45,
     spreadPassMax: 2,
     spreadWarnMax: 3
   });
@@ -7534,7 +7539,7 @@ var VBVRec = (() => {
       const level = lv.length ? lv[lv.length >> 1] : -200;
       const shortQuiet = level < quiet;
       const burstS = voicedN * hopS;
-      const skip = next >= 0 && pauseAfter >= longPause && burstS < C.skipMaxBurstS && (!sustained || shortQuiet);
+      const skip = next >= 0 && (end + 1) * hopS <= 0.4 && pauseAfter >= longPause && burstS < C.skipMaxBurstS && (!sustained || shortQuiet);
       if (!skip) return { first: cand, skipEnd };
       skipEnd = (end + 1) * hop;
       cand = next;
@@ -7608,9 +7613,40 @@ var VBVRec = (() => {
         limited = true;
       }
     }
+    if (limited) { // m3.6: look-ahead soft limiter so the -1.5 dBFS ceiling no longer stops the take reaching the target
+      const ceil = Math.pow(10, ceilingDbfs / 20);
+      let want = Math.min(targetLufs - before, maxGainDbOf(pk, ceilingDbfs) + 12), out2 = null, after = before;
+      for (let pass = 0; pass < 2; pass++) {
+        out2 = limitPeaks(samples, fs, Math.pow(10, want / 20), ceil);
+        after = integratedLufs(out2, fs);
+        if (!isFinite(after) || Math.abs(after - targetLufs) <= 0.3) break;
+        want = Math.min(want + (targetLufs - after), maxGainDbOf(pk, ceilingDbfs) + 12);
+      }
+      return { samples: out2, gainDb: want, lufsBefore: before, lufsAfter: after, limited: true, softLimited: true };
+    }
     const g = Math.pow(10, gainDb / 20), out = new Float32Array(samples.length);
     for (let i = 0; i < samples.length; i++) out[i] = samples[i] * g;
     return { samples: out, gainDb, lufsBefore: before, lufsAfter: before + gainDb, limited };
+  }
+  function maxGainDbOf(pk, ceilingDbfs) { return ceilingDbfs - 20 * Math.log10(pk); }
+  function limitPeaks(x, fs, g, ceil) {
+    const n = x.length, la = Math.max(1, Math.round(fs * 0.005)), rel = 1 - Math.exp(-1 / (fs * 0.08)), att = 1 - Math.exp(-1 / (fs * 0.002));
+    const req = new Float32Array(n);
+    for (let i = 0; i < n; i++) { const a = Math.abs(x[i]) * g; req[i] = a > ceil ? ceil / a : 1; }
+    const m = new Float32Array(n), dq = new Int32Array(n); let h = 0, t = 0; // sliding min over [i-la, i+la]
+    for (let j = 0, i = -la; i < n; j++, i++) {
+      if (j < n) { while (t > h && req[dq[t - 1]] >= req[j]) t--; dq[t++] = j; }
+      if (i < 0) continue;
+      while (dq[h] < i - la) h++;
+      m[i] = req[dq[h]];
+    }
+    let e = 1;
+    for (let i = 0; i < n; i++) { e = m[i] < e ? m[i] : e + (1 - e) * rel; m[i] = e; }
+    e = 1;
+    for (let i = n - 1; i >= 0; i--) { e = m[i] < e ? m[i] : e + (1 - e) * att; if (e < m[i]) m[i] = e; }
+    const out = new Float32Array(n);
+    for (let i = 0; i < n; i++) { let v = x[i] * g * m[i]; if (v > ceil) v = ceil; else if (v < -ceil) v = -ceil; out[i] = v; }
+    return out;
   }
 
   // ../verse-recorder/src/recorder/wav.js
@@ -7973,7 +8009,10 @@ var VBVRec = (() => {
   var SKIP = "SKIP";
   var r3 = (v) => v == null || !Number.isFinite(v) ? v : Math.round(v * 1e3) / 1e3;
   function padCalibration(s, sr) {
-    const a = s.subarray(Math.round(0.012 * sr), Math.round(0.1 * sr));
+    let z = 0;
+    while (z < s.length && s[z] === 0) z++;
+    if (z >= s.length) z = 0;
+    const a = s.subarray(Math.min(s.length, z + Math.round(0.012 * sr)), Math.min(s.length, z + Math.round(0.1 * sr)));
     const b = s.subarray(Math.max(0, s.length - Math.round(0.2 * sr)), Math.max(0, s.length - Math.round(0.035 * sr)));
     const out = new Float32Array(a.length + b.length);
     out.set(a);
@@ -7999,7 +8038,7 @@ var VBVRec = (() => {
       c.duration = { value: r3(ratio2), seconds: r3(dur), expected_s: r3(exp), status: st };
     } else c.duration = { value: null, seconds: r3(dur), status: SKIP, note: "no text loaded, word count unknown" };
     const lead = a.onsetSample / sr;
-    c.lead_in = { value: r3(lead), status: lead < gate.leadInFailMin || lead > gate.leadInWarnMax ? FAIL : lead >= gate.leadInPass[0] && lead <= gate.leadInPass[1] ? PASS : WARN };
+    c.lead_in = { value: r3(lead), status: lead >= gate.leadInPass[0] && lead <= gate.leadInPass[1] ? PASS : WARN }; // m3.6: never a FAIL (people start right after the tap)
     let clipped = 0, run = 0, maxRun = 0;
     for (const v of s) {
       if (Math.abs(v) >= gate.clipLevel) {
@@ -8013,7 +8052,7 @@ var VBVRec = (() => {
     if (meta && meta.rawClipRun >= gate.clipMaxRun) cst = FAIL;
     c.clipping = { value: clipped, max_run: Math.max(maxRun, meta?.rawClipRun || 0), status: cst };
     const fl = a.floorDb, snr = a.snrDb;
-    const fst = fl <= gate.floorPassMax ? PASS : fl <= gate.floorWarnMax ? WARN : FAIL;
+    const fst = fl <= gate.floorPassMax ? PASS : WARN; // m3.6: at most WARN
     const sst = snr >= gate.snrPassMin ? PASS : snr >= gate.snrWarnMin ? WARN : FAIL;
     c.noise_floor = { value: r3(fl), status: fst };
     c.snr = { value: r3(snr), status: sst };
@@ -8021,7 +8060,8 @@ var VBVRec = (() => {
     c.internal_silence = { value: r3(sil), status: sil < gate.silencePassMax ? PASS : sil <= gate.silenceWarnMax ? WARN : FAIL };
     const L = integratedLufs(s, sr);
     const d = Math.abs(L - LOUDNESS.targetLufs);
-    c.loudness = { value: r3(L), status: d <= gate.lufsPassTol ? PASS : d <= (gate.lufsWarnTol || 3) ? WARN : FAIL };
+    const rawPk = meta && meta.rawPeakDb != null ? meta.rawPeakDb : null;
+    c.loudness = { value: r3(L), raw_peak_db: r3(rawPk), status: rawPk != null && rawPk < (gate.silentPeakDb || -45) ? FAIL : d <= gate.lufsPassTol ? PASS : WARN }; // m3.6
     c._analysis = a;
     return c;
   }
@@ -8350,9 +8390,10 @@ var VBVRec = (() => {
       } else run = 0;
     }
     const trimmed = trimTake(raw, sr, a, { fadeInMs: C.fadeInMs, fadeOutMs: C.fadeOutMs });
+    const rawPkLin = peak(trimmed), rawPeakDb = rawPkLin > 0 ? 20 * Math.log10(rawPkLin) : -200;
     const norm2 = normalize(trimmed, sr);
     const wav = encodeWav(norm2.samples, sr);
-    const checks = checkVerse(decodeWav(wav), { words, meta: { rawClipRun }, gate: G });
+    const checks = checkVerse(decodeWav(wav), { words, meta: { rawClipRun, rawPeakDb }, gate: G });
     const fa = checks._analysis;
     delete checks._analysis;
     const hardFail = Object.values(checks).some((c) => c.status === "FAIL");
@@ -8369,6 +8410,8 @@ var VBVRec = (() => {
       gainDb: norm2.gainDb,
       lufs: norm2.lufsAfter,
       limited: norm2.limited,
+      softLimited: !!norm2.softLimited,
+      rawPeakDb,
       rawClipRun,
       resampled,
       durationS: norm2.samples.length / sr,
@@ -10057,7 +10100,7 @@ var VBVRec = (() => {
   // ---------- layout: landscape gets a definite height so KJBVR's fit can size the verse; never below 40 CSS px ----------
   function sizeMount() {
     var phone = innerWidth <= 600; // m3.3: the phone also gets a definite height, so the Record / Stop / Re-record bar sits under the verse (a long verse scrolls inside its panel)
-    var land = (innerWidth > innerHeight && innerWidth >= 900 || phone) && !!mountEl.querySelector('.vbv-verse');
+    var land = !!mountEl.querySelector('.vbv-verse'); // m3.6: every size gets a definite height; a long verse scrolls inside its panel and the buttons stay on screen
     mountEl.classList.toggle('vbvr-fixed', land);
     if (!land || mountEl.hidden) { mountEl.style.height = ''; return; }
     var top = mountEl.getBoundingClientRect().top + (window.scrollY || 0);
@@ -10095,7 +10138,20 @@ var VBVRec = (() => {
   var bRec = mk('vbv-btn-danger vbvr-b-rec', ''), bStop = mk('vbv-btn-primary vbvr-b-stop', 'Stop'), bRe = mk('vbv-btn-secondary vbvr-b-re vbvr-rerec', '');
   var dot = document.createElement('span'); dot.className = 'vbv-rec-dot'; dot.setAttribute('aria-hidden', 'true'); bRec.appendChild(dot); bRec.appendChild(document.createTextNode(' Record'));
   function setDis(b, d) { if (b.disabled !== d) { b.disabled = d; b.setAttribute('aria-disabled', String(d)); } }
+  // m3.6: the verse panel scrolls by touch; a 'More of this verse below' cue (an overlay, takes no space) shows until the end is reached
+  function verseScroll() {
+    var pn = mountEl.querySelector('.vbv-verse-panel'); if (!pn) return;
+    if (!pn.__vbvMore) {
+      var cue = document.createElement('div'); cue.className = 'vbvr-more'; cue.setAttribute('aria-hidden', 'true');
+      var t = document.createElement('span'); t.textContent = 'More of this verse below \u2193'; cue.appendChild(t); pn.appendChild(cue); pn.__vbvMore = cue;
+      var upd = function () { var more = pn.scrollHeight - pn.clientHeight - pn.scrollTop > 4; if (cue.classList.contains('is-on') !== more) cue.classList.toggle('is-on', more); };
+      pn.__vbvUpd = upd; pn.addEventListener('scroll', upd, { passive: true });
+      if (window.ResizeObserver) new ResizeObserver(upd).observe(pn);
+    }
+    pn.__vbvUpd();
+  }
   function updateBar() {
+    verseScroll();
     var r = handle && handle.recorder, root = mountEl.querySelector('.vbv-root');
     if (!r || !root) { bar.hidden = true; return; }
     if (bar.parentNode !== mountEl || bar.previousElementSibling !== root) mountEl.appendChild(bar);
