@@ -816,6 +816,17 @@ html {
    Text only; the red and green list buttons are untouched. */
 #app-tracker #recText { color: var(--color-fg); }
 
+/* m3.7: Progress status list (read-only, existing panel styling) */
+.vbv-status { margin-top: 8px; }
+.vbv-status-head { display: flex; justify-content: flex-end; margin: 0 0 10px; }
+.vbv-status-refresh { min-height: 44px; }
+.vbv-status-msg { margin: 0; font-size: max(16px, var(--fs-32)); }
+.vbv-status-list { list-style: none; margin: 0; padding: 0; }
+.vbv-status-row { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 12px 0; border-top: var(--border-width, 2px) solid var(--color-fg); font-size: max(18px, var(--fs-36)); }
+.vbv-status-row:first-child { border-top: 0; }
+.vbv-status-unit { font-weight: var(--font-weight-bold, 700); }
+.vbv-status-state { color: var(--color-muted); font-variant-numeric: tabular-nums; }
+
 /* ---- vbv-home.css ---- */
 /* VBV M2: verse map home + screen 02 (HANDOFF). Uses tokens.css variables. */
 /* inside the Tracker's centred .wrap: break out to the full width between the page margins, like the mock */
@@ -913,8 +924,8 @@ html {
   .vbv-apptitle { font-size: 20px; line-height: 1.2; white-space: nowrap; }
   .vbv-progtext { text-align: left; line-height: 1.3; margin-top: 2px; }
   .vbv-track { margin: 4px 0 6px; }
-  /* four tabs at 16px do not fit one row at 390px (need about 400px; "Rolling Reader" must keep its name), so they wrap to 2 x 2 */
-  .kjb-tabs { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 4px !important; padding-bottom: 6px !important; }
+  /* three short tabs (Tracker, Recorder, Progress) fit one row at 16px */
+  .kjb-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 4px !important; padding-bottom: 6px !important; }
   .kjb-tabs button { font-size: 16px !important; letter-spacing: 0 !important; padding: 2px 4px !important; min-height: 44px !important; }
   /* the verse map comes first in the Tracker tab; the title row with Settings & info follows it (same button, same behaviour) */
   #trkMain { display: flex; flex-direction: column; }
@@ -1460,6 +1471,13 @@ html {
 #vbvRec .vbvr-drive .kjb-second { min-height: 56px; font-size: 18px; font-weight: 700; }
 .vbvr-drive-set { padding: 8px 0 12px; } .vbvr-drive-set p { margin: 0 0 8px; font-size: 16px; } .vbvr-drive-h { font-weight: 700; font-size: 18px !important; }
 
+/* m3.7: recording timer/progress is monotonic and layout-stable (tabular-nums, fixed width and height) */
+#vbvRecMount .vbv-rec-banner { height: calc(80 * var(--scale) * 1px); min-height: calc(80 * var(--scale) * 1px); box-sizing: border-box; overflow: hidden; }
+#vbvRecMount .vbv-rec-timer { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; font-weight: 700; min-width: 6ch; width: 6ch; flex: 0 0 6ch; text-align: right; letter-spacing: 0; }
+#vbvRecMount .vbv-rec-word, #vbvRecMount .vbv-rec-dot { flex: 0 0 auto; }
+#vbvRecMount .vbv-level { flex: 1 1 auto; min-width: 40px; }
+#vbvRecMount .vbv-level.is-over .vbv-level-fill { background: #bbb; }
+
 /* ---- vbv-minfont.css ---- */
 /* Designer 18:25: no readable text below 16 CSS px at any size (phone included): tabs, banners, labels, status lines.
    Never shrink to fit: text wraps instead. This layer is last; it only RAISES sizes that the inherited CSS or the dots-map
@@ -1493,8 +1511,7 @@ html {
   <nav class="kjb-tabs" role="tablist" aria-label="Tabs">
     <button type="button" role="tab" id="kjbtab-tracker" data-kjb-tab="tracker" aria-controls="app-tracker" aria-selected="true">Tracker</button>
     <button type="button" role="tab" id="kjbtab-recorder" data-kjb-tab="recorder" aria-controls="app-recorder" aria-selected="false" tabindex="-1">Recorder</button>
-    <button type="button" role="tab" id="kjbtab-stitch" data-kjb-tab="stitch" aria-controls="app-stitch" aria-selected="false" tabindex="-1">Stitch</button>
-    <button type="button" role="tab" id="kjbtab-reader" data-kjb-tab="reader" aria-controls="app-reader" aria-selected="false" tabindex="-1">Rolling Reader</button>
+    <button type="button" role="tab" id="kjbtab-stitch" data-kjb-tab="stitch" aria-controls="app-stitch" aria-selected="false" tabindex="-1">Progress</button>
   </nav>
   <div id="shell-guard" role="alert" hidden></div>
   <div id="shell-other" role="status" hidden></div>
@@ -1653,11 +1670,11 @@ html {
 </template>
 </section>
 <section id="app-stitch" data-kjb-app="stitch" role="tabpanel" aria-labelledby="kjbtab-stitch" hidden>
-<p class="kjb-loading">Loading Stitch&hellip;</p>
+<p class="kjb-loading">Loading Progress&hellip;</p>
 <template id="tpl-stitch">
 <div class="kjb-wrap">
   <div class="kjb-titlerow">
-    <h1 tabindex="-1">Stitch</h1>
+    <h1 tabindex="-1">Progress</h1>
     <button type="button" class="kjb-setbtn" data-kjb-drawer="stitch" aria-haspopup="dialog" aria-controls="drawer-stitch"><span class="kjb-gear" aria-hidden="true">&#9881;</span> Settings &amp; info</button>
   </div>
   <div class="kjb-panel vbv-empty">
@@ -1670,318 +1687,6 @@ html {
   <div class="kjb-dhead"><div><h2 id="dt-stitch">Settings &amp; info</h2><div class="kjb-muted">For the Stitch tab</div></div><button type="button" class="kjb-second kjb-close">Close</button></div>
   <div class="kjb-dbody"><p class="kjb-dintro">Stitch has no settings. The gap between verses is fixed at 0.5 s.</p></div>
 </aside>
-</template>
-</section>
-<section id="app-reader" data-kjb-app="reader" role="tabpanel" aria-labelledby="kjbtab-reader" hidden>
-<p class="kjb-loading">Loading Rolling Reader&hellip;</p>
-<template id="tpl-reader">
-<div class="kjb-wrap">
-  <div class="kjb-titlerow">
-    <h1 id="rrTitle" tabindex="-1">Rolling Reader</h1>
-    <button type="button" class="kjb-setbtn" data-kjb-drawer="reader" aria-haspopup="dialog" aria-controls="drawer-reader"><span class="kjb-gear" aria-hidden="true">⚙</span> Settings &amp; info</button>
-  </div>
-  <div id="iosNote" class="note ios-note" hidden>📱 On iPhone/iPad: open this file in Safari. Recording needs Safari 14.1+ and the tab must stay open.</div>
-  <div id="envBanner" class="notice warn env-banner" role="alert">⚠️ If this page looks stuck or the Make video button does nothing, open this file in Safari (Share &gt; Open in Safari / Copy to Safari, or host it and add to Home Screen).</div>
-  <div id="fontNotice" class="notice info" role="status">Loading the OpenDyslexic font…</div>
-  <div class="kjb-ggrid">
-    <section class="card prev-card kjb-prev" aria-label="Preview">
-      <div class="pinbox" id="pinBox">
-    <div class="stage"><canvas id="view" width="1280" height="720" role="img" aria-label="Preview of the text crawling into the distance"></canvas></div>
-    <div class="transport">
-      <button type="button" id="play" aria-pressed="false">▶ Play preview</button>
-      <button type="button" id="restart">⟲ Restart</button>
-      <label for="scrub" class="sr-only">Preview position</label>
-      <input type="range" id="scrub" min="0" max="100" step="0.01" value="0">
-      <span class="clock" id="clock">0:00 / 0:00</span>
-      
-    </div>
-    </div>
-    </section>
-    <section class="card kjb-job" aria-label="Make the video">
-      <div class="kjb-facts">
-        <div class="kjb-ref" id="rrRef">No passage yet</div>
-        <span class="meta" id="audioInfo">No narration yet.</span>
-        <div class="note" id="handoffNote" role="status" aria-live="polite" hidden></div>
-        <div class="meta" id="timingInfo"></div>
-      </div>
-      <div class="export">
-        
-      <div class="row">
-        <button type="button" class="primary" id="generate">Make video</button>
-        <button type="button" id="cancel" hidden>Cancel</button>
-      </div>
-      <div class="note" id="recNote"></div>
-      <div id="progressBox" hidden style="margin-top:10px">
-        <progress id="progress" max="100" value="0" aria-label="Recording progress"></progress>
-        <div class="meta" id="progressText" aria-live="polite"></div>
-      </div>
-      
-      
-      
-    
-        <div id="driveBox" class="rr-drive-ui" style="margin-top:10px">
-        <div class="row">
-          <button type="button" class="small" id="driveSignIn">Sign in to Google</button>
-          <button type="button" class="small" id="drivePick" disabled>Choose Drive folder</button>
-          <button type="button" class="small" id="driveRetry" hidden>Retry upload</button>
-        </div>
-        <div id="driveFlag" class="notice info" role="status" aria-live="polite"></div>
-        
-      </div>
-        <div id="status" role="status" aria-live="polite"></div>
-        <div class="kjb-mark" id="rrMark" role="status" aria-live="polite" hidden></div>
-        <div id="result" aria-live="polite" style="margin-top:10px"></div>
-      </div>
-    </section>
-  </div>
-</div>
-<div class="kjb-scrim" id="scrim-reader" hidden></div>
-<aside class="kjb-drawer" id="drawer-reader" role="dialog" aria-modal="true" aria-labelledby="dt-reader" hidden>
-  <div class="kjb-dhead"><div><h2 id="dt-reader">Settings &amp; info</h2><div class="kjb-muted">For the Rolling Reader tab</div></div><button type="button" class="kjb-second kjb-close">Close</button></div>
-  <div class="kjb-dbody">
-    <p class="kjb-dintro">Video look and Drive options. Changing these does not change the plan.</p>
-    <details class="kjb-sec"><summary><span class="t">Text and narration<span class="hint">From the Recorder</span></span></summary>
-      <div class="in"><label for="text">Your text</label>
-<textarea id="text" spellcheck="true" placeholder="Paste or type your text here"></textarea>
-<div class="meta" id="textMeta" aria-live="polite"></div><div class="grid kjb-grid1"><div class="field" style="grid-column: 1 / -1">
-        <label>Narration audio</label>
-        <input type="file" id="audio" hidden tabindex="-1" aria-hidden="true"><!-- not shown: narration only arrives from the Voice Recorder; the element stays because the page code uses it -->
-        <div class="row" style="margin-top:6px">
-          
-          <button type="button" class="small" id="audioRemove" hidden>Remove audio</button>
-        </div>
-        
-        <div class="row" style="margin-top:6px"><button type="button" class="small" id="cacheClear" hidden>Forget the saved import</button></div>
-      </div></div></div></details>
-    <details class="kjb-sec"><summary><span class="t">Music<span class="hint">Track and volume</span></span></summary>
-      <div class="in"><div class="grid kjb-grid1"><div class="field" style="grid-column: 1 / -1">
-        <label for="musicPick">Music track (optional)</label>
-        <select id="musicPick"><option value="">No music</option><option value="ngoni">Ngoni for video</option><option value="rain">Soft rain</option><option value="wind">Gentle wind</option><option value="pad">Warm ambient pad</option><option value="file" disabled>Your own file (chosen below)</option></select>
-        <label for="backing" style="margin-top:8px">Or choose your own music file</label>
-        <input type="file" id="backing" accept="audio/*,.mp3,.m4a,.wav,.ogg,.opus,.aac,.flac,.webm">
-        <div class="row" style="margin-top:6px">
-          <span class="meta" id="backingInfo">No music track chosen yet</span>
-          <button type="button" class="small" id="backingRemove" hidden>Remove music track</button>
-        </div>
-      </div><div class="field" style="grid-column: 1 / -1">
-        <label for="bgVol">Music volume: <output id="bgVolOut" for="bgVol">35%</output></label>
-        <input type="range" id="bgVol" min="0" max="100" step="1" value="35">
-        <div class="note" id="bgNote">Plays under the voice for the whole video: it loops if it is shorter and fades out over the last second.</div>
-      </div></div></div></details>
-    <details class="kjb-sec"><summary><span class="t">Word timing<span class="hint">Follow the voice</span></span></summary>
-      <div class="in"><div class="grid kjb-grid1"><div class="field" style="grid-column: 1 / -1">
-        <label for="syncOn" class="row" style="margin:0"><input type="checkbox" id="syncOn" role="switch" checked> Sync words to speech</label>
-        <div class="note" id="syncNote" role="status" aria-live="polite"></div>
-        <div class="row" style="margin-top:6px">
-          <button type="button" class="small" id="syncRun">Find word timings</button>
-          <button type="button" class="small" id="syncCancel" hidden>Cancel</button>
-          <label for="syncModel" style="margin:0;font-weight:400">Recogniser</label>
-          <select id="syncModel" style="width:auto;flex:1;min-width:0"><option value="base" selected>Accurate: whisper-base.en (about 77 MB)</option><option value="tiny">Smaller download: whisper-tiny.en (about 41 MB)</option></select>
-        </div>
-        <div id="syncProgBox" hidden><progress id="syncProg" max="100" value="0" aria-label="Word timing progress"></progress><div class="note" id="syncProgText"></div></div>
-        <div class="note">Free, and runs on this device: the first time, the browser downloads the speech recogniser once and keeps it. The audio never leaves this device.</div>
-      </div>
-<div id="syncBody">
-      <div class="field">
-        <label for="zonePos">Landing zone position: <output id="zonePosOut" for="zonePos">75%</output></label>
-        <input type="range" id="zonePos" min="40" max="95" step="1" value="75">
-        <div class="note">How far down the screen each word arrives as it is spoken (percent of the frame height from the top).</div>
-      </div>
-      <div class="field">
-        <label for="zoneH">Landing zone height: <output id="zoneHOut" for="zoneH">34%</output></label>
-        <input type="range" id="zoneH" min="4" max="40" step="1" value="34">
-        <div class="note">On a computer you can also drag the zone, or its edges, in the preview.</div>
-      </div>
-      <div class="field">
-        <label for="syncSmooth">Motion: <output id="syncSmoothOut" for="syncSmooth">85</output></label>
-        <input type="range" id="syncSmooth" min="0" max="100" step="1" value="85" aria-describedby="syncSmoothNote">
-        <div class="note" id="syncSmoothNote">0 = tight snap: each line jumps into the zone as its first word is spoken. Anything above 0 is a continuous glide; the higher, the smoother and steadier the flow (85 is the default), with words landing a little less exactly on the voice.</div>
-      </div>
-      <div class="field">
-        <label for="syncNudge">Fine-tune: <output id="syncNudgeOut" for="syncNudge">0 ms</output></label>
-        <div class="row">
-          <input type="range" id="syncNudge" min="-1000" max="1000" step="10" value="0" style="flex:1">
-          <button type="button" class="small" id="syncNudgeReset">Reset</button>
-        </div>
-        <div class="note">Positive = words arrive a little before they are spoken; negative = a little after. A built-in 0.3 s delay is already applied on top of this, so the text starts with the first spoken word.</div>
-      </div>
-      <div class="field">
-        <label for="zoneShow" class="row" style="margin:0;flex-wrap:nowrap"><input type="checkbox" id="zoneShow" role="switch" checked> <span style="flex:1;min-width:0">Show landing zone guide</span></label>
-        <label for="zoneExport" class="row" style="margin:8px 0 0;flex-wrap:nowrap"><input type="checkbox" id="zoneExport" role="switch"> <span style="flex:1;min-width:0">Show the guide in the exported video too</span></label>
-      </div>
-      <div class="field">
-        <label for="hlOn" class="row" style="margin:0;flex-wrap:nowrap"><input type="checkbox" id="hlOn" role="switch"> <span style="flex:1;min-width:0">Highlight the word being spoken</span></label>
-        <label for="hlCol" class="row" style="margin:8px 0 0;flex-wrap:nowrap"><input type="color" id="hlCol" value="#ffe81f" aria-label="Highlight colour"> <span style="flex:1;min-width:0">Highlight colour</span></label>
-        <div class="note" id="hlNote"></div>
-      </div>
-      </div></div></div></details>
-    <details class="kjb-sec"><summary><span class="t">Crawl timing<span class="hint">Fit to audio or set length</span></span></summary>
-      <div class="in"><div class="grid kjb-grid1"><div class="note" id="syncDrives" style="grid-column: 1 / -1" hidden>Word sync is steering the crawl, so the crawl length and speed controls are paused. Turn off “Sync words to speech” to use them. “Audio starts at” still adds a lead-in before the voice.</div>
-<div class="field" id="modeField" style="grid-column: 1 / -1" hidden>
-        <div class="lbl" id="modeLbl">Timing mode</div>
-        <div class="seg" role="radiogroup" aria-labelledby="modeLbl">
-          <button type="button" role="radio" id="modeFit" aria-checked="true">Fit crawl to audio</button>
-          <button type="button" role="radio" id="modeManual" aria-checked="false">Set crawl length myself</button>
-        </div>
-        <div class="note" id="modeNote"></div>
-      </div>
-<div class="field" id="lenField" style="grid-column: 1 / -1">
-        <label for="lenSlider">Crawl length: <output id="lenOut" for="lenSlider lenNum"></output></label>
-        <input type="range" id="lenSlider" min="0" max="1000" step="1" value="500" aria-describedby="lenNote">
-        <div class="row">
-          <label for="lenNum" style="margin:0;font-weight:400">Exact seconds</label>
-          <input type="number" id="lenNum" min="5" max="1800" step="0.1" inputmode="decimal" value="60">
-        </div>
-        <div class="presets" id="presets" hidden>
-          <button type="button" class="small" id="pMatch">Match audio length</button>
-          <button type="button" class="small" data-mult="1.5">1.5×</button>
-          <button type="button" class="small" data-mult="2">2×</button>
-          <button type="button" class="small" data-mult="3">3× audio length</button>
-        </div>
-        <div class="note" id="lenNote"></div>
-      </div>
-<div class="field" id="speedField">
-        <label for="speed">Scroll speed: <output id="speedOut" for="speed"></output></label>
-        <input type="range" id="speed" min="1" max="400" step="1" value="70" aria-describedby="speedNote">
-        <div class="note" id="speedNote"></div>
-      </div>
-<div class="field" id="delayBox" hidden>
-        <label for="delay">Audio starts at: <output id="delayOut" for="delay">0.0 s</output></label>
-        <div class="row">
-          <input type="range" id="delay" min="0" max="120" step="0.1" value="0" style="flex:1" aria-describedby="delayNote">
-          <button type="button" class="small" id="delayReset">Reset</button>
-        </div>
-        <div class="note" id="delayNote">Seconds of crawl before the voice begins. The audio plays at normal speed, never stretched.</div>
-        <label class="row" style="gap:.5em;margin-top:.6em"><input type="checkbox" id="autoLead" checked> Automatic lead-in: make sure the voice starts at least 1.5 s into the video, so the text is on screen first</label>
-        <div class="row" style="gap:.5em;margin-top:.4em"><label for="stitchFile" style="margin:0">Timings file from the stitch (optional):</label><input type="file" id="stitchFile" accept=".json,application/json"></div>
-        <div class="note" id="stitchNote">Choose the .timings.json that came with the stitched audio and the Reader uses its exact first and last spoken moments.</div>
-      </div>
-<div class="field" id="offsetBox" hidden>
-        <label for="offset">Lead / lag: <output id="offsetOut" for="offset">0.0 s</output></label>
-          <div class="row">
-            <input type="range" id="offset" min="-5" max="5" step="0.1" value="0" style="flex:1" aria-describedby="offsetNote">
-            <button type="button" class="small" id="offsetReset">Reset</button>
-          </div>
-          <div class="note" id="offsetNote">Positive = text finishes <em>after</em> the voice ends; negative = text finishes earlier.</div>
-        </div></div></div></details>
-    <details class="kjb-sec"><summary><span class="t">Text and edges<span class="hint">Size, colour, fade</span></span></summary>
-      <div class="in"><div class="kjb-stack"><button type="button" class="small" id="styleReset">Reset text and edge settings</button></div><div class="grid kjb-grid1"><div class="field">
-        <label for="size">Text size: <output id="sizeOut" for="size"></output></label>
-        <input type="range" id="size" min="24" max="200" step="2" value="162">
-        <div class="note">Up to 200 px, more than double the old limit. Very large text means fewer words per line and a longer crawl.</div>
-        <div class="note" id="fitNote" role="status" aria-live="polite" hidden></div>
-      </div>
-<div class="field">
-        <label for="bold" class="row" style="margin:0"><input type="checkbox" id="bold" role="switch"> Bold text</label>
-        <div class="note">Uses the real OpenDyslexic Bold face.</div>
-      </div>
-<div class="field">
-        <label for="lineSp">Line spacing: <output id="lineSpOut" for="lineSp"></output></label>
-        <input type="range" id="lineSp" min="1" max="3" step="0.05" value="1.4">
-      </div>
-<div class="field">
-        <label for="letterSp">Letter spacing: <output id="letterSpOut" for="letterSp"></output></label>
-        <input type="range" id="letterSp" min="-5" max="30" step="1" value="0">
-      </div>
-<div class="field">
-        <label for="align">Alignment</label>
-        <select id="align">
-          <option value="left">Left (easiest to read)</option>
-          <option value="center" selected>Centered</option>
-          <option value="justify">Justified (classic crawl)</option>
-        </select>
-      </div>
-<div class="field">
-        <label for="fg" class="row" style="margin:0"><input type="color" id="fg" value="#ffffff" aria-label="Text colour"> Text colour</label>
-      </div>
-<div class="field">
-        <label for="bg" class="row" style="margin:0"><input type="color" id="bg" value="#000000" aria-label="Background colour"> Background colour</label>
-        <div class="note">Defaults to solid black.</div>
-      </div>
-<div class="field">
-        <label for="parting">Angle of parting: <output id="partingOut" for="parting"></output></label>
-        <input type="range" id="parting" min="0" max="100" step="5" value="80">
-        <div class="note">0% is the classic straight-line crawl. Higher values keep the text rising straight and full width through the middle, then bend it away sharply near the top. Crawl length shifts a little because the path changes.</div>
-      </div>
-<div class="field">
-        <label for="upright" class="row" style="margin:0"><input type="checkbox" id="upright" role="switch" checked> Upright letters</label>
-        <div class="note">On: every word stands up and shrinks evenly with distance (no squashed, flattened letters). Off: the classic look, where the letters lie flat on the tilted plane.</div>
-      </div>
-<div class="field">
-        <label for="shadow" class="row" style="margin:0"><input type="checkbox" id="shadow" role="switch" checked> Shadow</label>
-        <div class="note">A soft shadow under every word, cast onto the tilted plane. It shrinks with the letters as they recede.</div>
-      </div>
-<div class="field shadow-opt">
-        <label for="lightAngle">Light angle: <output id="lightAngleOut" for="lightAngle"></output></label>
-        <div class="row" style="align-items:center;gap:12px;flex-wrap:nowrap">
-          <canvas id="lightDial" width="128" height="128" style="width:64px;height:64px;flex:0 0 64px;touch-action:none;cursor:pointer" role="img" aria-label="Light direction dial: drag to set the light angle"></canvas>
-          <input type="range" id="lightAngle" min="0" max="360" step="1" value="135" style="flex:1 1 auto">
-        </div>
-        <div class="note">Where the light comes from: 0° from the right, 90° from the top, 180° from the left, 270° from the bottom. The shadow falls the opposite way. Drag the dial or use the slider.</div>
-      </div>
-<div class="field shadow-opt">
-        <label for="shadowLen">Shadow distance: <output id="shadowLenOut" for="shadowLen"></output></label>
-        <input type="range" id="shadowLen" min="0" max="50" step="1" value="12">
-      </div>
-<div class="field shadow-opt">
-        <label for="shadowSoft">Shadow softness: <output id="shadowSoftOut" for="shadowSoft"></output></label>
-        <input type="range" id="shadowSoft" min="0" max="30" step="1" value="5">
-      </div>
-<div class="field shadow-opt">
-        <label for="shadowOp">Shadow strength: <output id="shadowOpOut" for="shadowOp"></output></label>
-        <input type="range" id="shadowOp" min="0" max="100" step="5" value="75">
-      </div>
-<div class="field shadow-opt">
-        <label for="shadowCol" class="row" style="margin:0"><input type="color" id="shadowCol" value="#808080" aria-label="Shadow colour"> Shadow colour</label>
-        <div class="note">Mid-grey shows up on black; pick a darker colour on light backgrounds.</div>
-      </div>
-<div class="field">
-        <label for="fadeTop">Top fade (far end): <output id="fadeTopOut" for="fadeTop"></output></label>
-        <input type="range" id="fadeTop" min="0" max="100" step="5" value="50">
-        <div class="note">How early the text dissolves as it recedes. 0% is a hard cut at the vanishing point; the finish time does not change.</div>
-      </div>
-<div class="field">
-        <label for="fadeBottom">Bottom fade (near edge): <output id="fadeBottomOut" for="fadeBottom"></output></label>
-        <input type="range" id="fadeBottom" min="0" max="100" step="5" value="0">
-        <div class="note">Fades text in as it rises from the bottom of the frame. 0% is no fade.</div>
-      </div></div></div></details>
-    <details class="kjb-sec"><summary><span class="t">Video file<span class="hint">Resolution, frame rate</span></span></summary>
-      <div class="in"><div class="grid kjb-grid1"><div class="field">
-        <label for="res">Resolution</label>
-        <select id="res">
-          <option value="720" selected>720p (1280×720)</option>
-          <option value="1080">1080p (1920×1080)</option>
-        </select>
-      </div>
-<div class="field">
-        <label for="fps">Frame rate</label>
-        <select id="fps"><option value="30" selected>30 fps</option><option value="60">60 fps</option><option value="24">24 fps</option></select>
-      </div>
-<div class="field">
-        <label for="format">Export format</label>
-        <select id="format">
-          <option value="auto" selected>Auto (MP4 if this browser can)</option>
-          <option value="webm">WebM</option>
-          <option value="zip">PNG frames (ZIP)</option>
-        </select>
-        <div class="note" id="formatNote"></div>
-      </div></div></div></details>
-    <details class="kjb-sec"><summary><span class="t">Google Drive<span class="hint">Where the MP4 goes</span></span></summary>
-      <div class="in"><div class="note">Drive only: select the main folder <strong>01 KJB video files</strong> itself, NOT a subfolder inside it (such as “untitled folder”). Only that exact folder is accepted. No device download. Sign-in also asks to read Drive metadata for filename checks (no file contents). This browser remembers sign-in until the access token expires (about 1 hour), then tries to renew quietly if you are still signed into Google. Google may still need a popup: if blocked, click Sign in again. If browser storage is blocked, sign-in is only for this tab. A waiting finished MP4 is only held in this tab’s memory until Drive confirms upload; closing or refreshing can lose it.</div></div></details>
-    <details class="kjb-sec"><summary>My defaults</summary>
-      <div class="in"><div class="grid kjb-grid1"><div class="field" style="grid-column: 1 / -1">
-        <div class="row">
-          <button type="button" class="small" id="defSave">Save as my defaults</button>
-          <button type="button" class="small" id="defReset">Reset to built-in defaults</button>
-        </div>
-        <div class="note" id="defStatus" role="status" aria-live="polite">Using the built-in defaults.</div>
-        <div class="note">Saves your current look, landing zone, sync, timing, crawl shape, export and backing-volume settings on this device, and uses them every time the page opens. Your text, audio and file names are never saved. Shadow settings aren’t included.</div>
-      </div></div></div></details>
-    <details class="kjb-sec"><summary><span class="t">Preview<span class="hint">Pin</span></span></summary>
-      <div class="in"><label class="row pin-toggle" title="Keep the preview in view while you scroll through the settings"><input type="checkbox" id="pinPreview" checked> Pin preview</label></div></details>
-  </div>
-</aside>
-
 </template>
 </section>
 </div>
@@ -5869,7 +5574,7 @@ window.RR = { get defaults() { return defaults.info; }, get drawT() { return pv.
 (function () {
   'use strict';
   var BUILD = 'onepage-20261110-1737';
-  var KJB = window.KJB = { build: BUILD, tabs: ['tracker', 'recorder', 'stitch', 'reader'], names: { tracker: 'Tracker', recorder: 'Recorder', stitch: 'Stitch', reader: 'Rolling Reader' } };
+  var KJB = window.KJB = { build: BUILD, tabs: ['tracker', 'recorder', 'stitch'], names: { tracker: 'Tracker', recorder: 'Recorder', stitch: 'Progress' } };
   var $ = function (id) { return document.getElementById(id); };
   var H = {};
   KJB.on = function (n, f) { (H[n] = H[n] || []).push(f); };
@@ -6001,7 +5706,8 @@ window.RR = { get defaults() { return defaults.info; }, get drawT() { return pv.
   KJB.takePassage = function () { var p = pendingPassage; pendingPassage = null; return p; };
   KJB.setPendingPassage = function (p) { pendingPassage = p; };
   KJB.incomingNarration = false;
-  KJB.sendNarration = function (d) { // Recorder -> Rolling Reader, in memory
+  KJB.sendNarration = function (d) { // m3.7: Rolling Reader tab removed; a Send tap must not throw
+    return Promise.resolve({ ok: false, error: 'The Rolling Reader tab is not on this page.' });
     var busy = KJB.busyKind().filter(function (b) { return b.tab === 'reader'; });
     if (busy.length) return Promise.resolve({ ok: false, error: 'Rolling Reader is making a video. Wait for it to finish, then tap Send again.' });
     KJB.incomingNarration = true;
@@ -6045,7 +5751,7 @@ window.RR = { get defaults() { return defaults.info; }, get drawT() { return pv.
     if (root) root.setAttribute('data-view', name);
   };
   /* ---------- titles ---------- */
-  var titles = { tracker: 'Bible Reading Tracker', recorder: 'Recorder - Bible Reading Tracker', stitch: 'Stitch - Bible Reading Tracker', reader: 'Rolling Reader - Bible Reading Tracker' };
+  var titles = { tracker: 'Bible Reading Tracker', recorder: 'Recorder - Bible Reading Tracker', stitch: 'Progress - Bible Reading Tracker', reader: 'Rolling Reader - Bible Reading Tracker' };
   KJB.titleFor = function (tab, t) { titles[tab] = t + (tab === 'tracker' ? '' : ' - Bible Reading Tracker'); if (KJB.current === tab) document.title = titles[tab]; };
   KJB.title = function (tab) { return titles[tab]; };
 })();
@@ -6088,6 +5794,7 @@ window.RR = { get defaults() { return defaults.info; }, get drawT() { return pv.
   }
   KJB.mount = function (tab) {
     if (mounted[tab]) return mounted[tab];
+    if (TABS.indexOf(tab) < 0 || !$('app-' + tab) || !$('tpl-' + tab)) return (mounted[tab] = Promise.resolve());
     mounted[tab] = new Promise(function (res) {
       requestAnimationFrame(function () { setTimeout(function () {
         var root = $('app-' + tab), tpl = $('tpl-' + tab);
@@ -8574,6 +8281,14 @@ var VBVRec = (() => {
       this.saveError = null;
       this.collecting = false;
       this.chunks = [];
+      this.startedAtMono = 0;
+      {
+        const words = this.textSource && this.textSource.wordCount ? this.textSource.wordCount(this.verseId) : null;
+        const gte = this.gate || GATE;
+        const padS = gte.padS != null ? gte.padS : 0.4;
+        const rate = gte.wordsPerSecond || 2.5;
+        this.expectedDurationS = words > 0 ? words / rate + padS : 15;
+      }
       this.go("record");
       try {
         await this.ensureMic();
@@ -8587,6 +8302,7 @@ var VBVRec = (() => {
       this.chunks = [];
       this.collecting = true;
       this.startedAt = Date.now();
+      this.startedAtMono = typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
       this.go("started");
     }
     async stop() {
@@ -8940,8 +8656,11 @@ var VBVRec = (() => {
     const prevId = index > 0 ? ids[index - 1] : null;
     const nextId = index < ids.length - 1 ? ids[index + 1] : null;
     const takeS = rec.take && rec.take.meta && rec.take.meta.durationS != null ? rec.take.meta.durationS : rec.take && rec.take.wav ? null : 0;
-    const startedAt = rec.startedAt || now;
-    const elapsed = timerS != null ? timerS : recording ? (now - startedAt) / 1e3 : 0;
+    const nowMono = typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
+    const elapsed = timerS != null ? timerS : recording && rec.startedAtMono ? (nowMono - rec.startedAtMono) / 1e3 : 0;
+    const expected = rec.expectedDurationS || 0;
+    const progress = expected > 0 ? Math.min(1, Math.max(0, elapsed / expected)) : 0;
+    const overtime = expected > 0 && elapsed > expected;
     const rows = ids.map((vid) => {
       const take = rec.takesById && rec.takesById[vid];
       const checks = take && take.checks || rec.take && rec.take.verseId === vid && rec.take.checks || null;
@@ -8970,7 +8689,7 @@ var VBVRec = (() => {
       rerecordId = problem.id;
       rerecordLabel = `Record verse ${shortRef(problem.id).split(":")[1]} again`;
     }
-    let completeNote = "Stitching starts by itself when the last verse is saved, if every check is a PASS. You can also use Stitch now. A WARN still needs your OK.";
+    let completeNote = "VideoBot stitches complete chapters at its daily 21:00 check. Stitch now leaves a request so it's picked up then, or sooner if Robin asks VideoBot.";
     let warnCopy = "";
     if (fails.length) {
       warnCopy = `A check failed on ${fails.map((r) => r.ref).join(", ")}. Record ${fails.length === 1 ? "that verse" : "those verses"} again before stitching.`;
@@ -8999,6 +8718,8 @@ var VBVRec = (() => {
       nextLabel: nextId ? `Next  \xB7  ${refOf(nextId)}` : "Next",
       timer: formatTimer(elapsed),
       level: level != null ? level : levelFromChunks(rec.chunks),
+      progress,
+      overtime,
       takeDuration: formatTimer(takeS || 0),
       takeSeconds: takeS,
       strip,
@@ -9111,9 +8832,11 @@ var VBVRec = (() => {
       banner.appendChild(el("span", { class: "vbv-rec-dot vbv-rec-dot-pulse", "aria-hidden": "true" }));
       banner.appendChild(el("span", { class: "vbv-rec-word", text: "Recording" }));
       banner.appendChild(el("span", { class: "vbv-rec-timer", text: model.timer }));
-      const meter = el("div", { class: "vbv-level", role: "meter", "aria-label": "Microphone level", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(Math.round((model.level || 0) * 100)) });
+      const pct = Math.round((model.progress || 0) * 100);
+      const meter = el("div", { class: "vbv-level", role: "meter", "aria-label": "Recording progress", "aria-valuemin": "0", "aria-valuemax": "100", "aria-valuenow": String(pct) });
+      if (model.overtime) meter.classList.add("is-over");
       const fill = el("div", { class: "vbv-level-fill" });
-      fill.style.width = `${Math.round((model.level || 0) * 100)}%`;
+      fill.style.width = `${pct}%`;
       meter.appendChild(fill);
       banner.appendChild(meter);
       root.appendChild(banner);
@@ -9263,27 +8986,33 @@ var VBVRec = (() => {
       });
     };
     const prev = rec.onUpdate;
+    let tick = 0;
+    const tickOnce = () => {
+      if (rec.state !== V.RECORDING && rec.state !== V.STARTING) { tick = 0; return; }
+      // m3.7: timer + progress from one performance.now() start and a fixed expected duration; verse is not re-rendered
+      const t = containerEl.querySelector(".vbv-rec-timer"), f = containerEl.querySelector(".vbv-level-fill"), m = containerEl.querySelector(".vbv-level");
+      if (!t || !f) { paint(); tick = requestAnimationFrame(tickOnce); return; }
+      const model = viewModel(rec, opts), pct = Math.round((model.progress || 0) * 100);
+      if (t.textContent !== model.timer) t.textContent = model.timer;
+      f.style.width = pct + "%";
+      if (m) { m.setAttribute("aria-valuenow", String(pct)); m.classList.toggle("is-over", !!model.overtime); }
+      tick = requestAnimationFrame(tickOnce);
+    };
+    const prevPaint = paint;
+    const paintAndTick = () => {
+      prevPaint();
+      if ((rec.state === V.RECORDING || rec.state === V.STARTING) && !tick && typeof requestAnimationFrame === "function") tick = requestAnimationFrame(tickOnce);
+    };
     rec.onUpdate = (r) => {
       if (prev) prev(r);
-      paint();
+      paintAndTick();
     };
-    paint();
-    let tick = 0;
-    if (typeof window !== "undefined") {
-      tick = setInterval(() => {
-        if (rec.state !== V.RECORDING && rec.state !== V.STARTING) return;
-        // m3.4: while recording only the timer and the level move; the verse is not re-rendered on ticks
-        const t = containerEl.querySelector(".vbv-rec-timer"), f = containerEl.querySelector(".vbv-level-fill"), m = containerEl.querySelector(".vbv-level");
-        if (!t || !f) { paint(); return; }
-        const model = viewModel(rec, opts), pct = Math.round((model.level || 0) * 100);
-        if (t.textContent !== model.timer) t.textContent = model.timer;
-        f.style.width = pct + "%"; if (m) m.setAttribute("aria-valuenow", String(pct));
-      }, 200);
-    }
+    if (typeof requestAnimationFrame === "function") paintAndTick();
+    else prevPaint();
     return {
-      paint,
+      paint: paintAndTick,
       destroy() {
-        if (tick) clearInterval(tick);
+        if (tick) cancelAnimationFrame(tick); tick = 0;
         if (rec.onUpdate === paint || rec.onUpdate) rec.onUpdate = prev || (() => {
         });
       }
@@ -9729,6 +9458,75 @@ var VBVRec = (() => {
   return __toCommonJS(entry_exports);
 })();
 
+/* ---- video-status.js ---- */
+/* VBV video status (M6; Builder-bot, 15 Nov 18:32). The page lists the status folder VIDEO_STATUS_FOLDER_ID ('00 Video status',
+   1JkplywPuY1HmqKz5RvsIt-iJKlG1l493) by id with drive.metadata.readonly and reads ONLY file names: "<Unit> · <status>.vbstatus".
+   Split on the LAST " · ". <Unit> must exactly equal "Book C" or "Book" (a whole short book); never a prefix match.
+   Duplicate unit -> newest modifiedTime wins. No Picker step. Poll on focus and about every 60 s (wired in M6). */
+var VBVVideoStatus = (function () {
+  'use strict';
+  var SEP = ' \u00b7 ', EXT = '.vbstatus';
+  var CODES = { waiting: 0, stitching: 1, rendering: 2, checking: 3, uploading: 3, held: 3, done: 4, 'done-private': 4, 'done-public': 4, error: 'error' };
+  /** valid unit names from the dots-map book index: "Genesis 7", "Psalm 23", and "Jonah" / "Obadiah" for short or one-chapter books */
+  function unitSet(DM) {
+    var set = new Set();
+    DM.BOOKS.forEach(function (b) { var disp = b.code === 'PSA' ? 'Psalm' : b.name;
+      for (var c = 1; c <= b.chapters; c++) set.add(disp + ' ' + c);
+      if (b.short || b.chapters === 1) set.add(b.name); });
+    return set;
+  }
+  /** "Genesis 7 · rendering.vbstatus" -> { unit, status, code } | null */
+  function parseStatusName(name, units) {
+    if (typeof name !== 'string' || name.slice(-EXT.length) !== EXT) return null;
+    var base = name.slice(0, -EXT.length), i = base.lastIndexOf(SEP); if (i <= 0) return null;
+    var unit = base.slice(0, i), status = base.slice(i + SEP.length);
+    if (!units.has(unit)) return null;                         // exact whole name only
+    if (!Object.prototype.hasOwnProperty.call(CODES, status)) return null;   // unknown status: ignored, never guessed
+    return { unit: unit, status: status, code: CODES[status], visibility: status === 'done-private' ? 'private' : status === 'done-public' ? 'public' : '' };
+  }
+  /** Drive files [{name, modifiedTime}] -> { "Genesis 7": {status, code, visibility, at, name} }  (newest modifiedTime per unit) */
+  function statusFromFiles(files, units) {
+    var out = {};
+    (files || []).forEach(function (f) { var p = parseStatusName(f && f.name, units); if (!p) return;
+      var t = Date.parse(f.modifiedTime || '') || 0, cur = out[p.unit];
+      if (!cur || t > cur._t) out[p.unit] = { status: p.status, code: p.code, visibility: p.visibility, at: f.modifiedTime || '', name: f.name, id: f.id || '', missingVerses: f.missingVerses || [], _t: t }; });
+    Object.keys(out).forEach(function (k) { delete out[k]._t; });
+    return out;
+  }
+  /** dot code for a unit: 1–4, 'error', or 0 when no status file */
+  function unitStageCode(map, unit) { var s = map[unit]; return s ? s.code : 0; }
+  /** Drive list request for the folder (names + modifiedTime only) */
+  function listUrl(folderId) {
+    return 'https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent("'" + folderId + "' in parents and trashed = false") +
+      '&fields=' + encodeURIComponent('nextPageToken,files(id,name,modifiedTime)') + '&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true';
+  }
+  function missingVersesFromStatus(json) {
+    if (!json || typeof json !== 'object') return [];
+    var raw = json.missingVerses || json.missing_verses || json['missing-verses'] || json.versesMissing || json.missing;
+    if (!raw && json.held && typeof json.held === 'object') raw = json.held.missingVerses || json.held.missing;
+    if (!Array.isArray(raw)) return [];
+    return raw.map(function (v) {
+      if (typeof v === 'number' && isFinite(v)) return v;
+      if (typeof v === 'string') { var n = parseInt(v.replace(/^.*:/, ''), 10); return isFinite(n) ? n : null; }
+      if (v && typeof v === 'object' && v.verse != null) return +v.verse;
+      return null;
+    }).filter(function (n) { return n > 0; });
+  }
+  function progressLabel(status) {
+    if (status === 'held') return 'Held: please check';
+    if (status === 'done-private' || status === 'done-public' || status === 'done') return 'done';
+    if (status === 'uploading') return 'checking';
+    return status || '';
+  }
+  function readerLabel(status) {
+    if (status === 'done-private' || status === 'done-public' || status === 'done') return 'done';
+    if (status === 'uploading') return 'checking';
+    return status || '';
+  }
+  return { CODES: CODES, unitSet: unitSet, parseStatusName: parseStatusName, statusFromFiles: statusFromFiles, unitStageCode: unitStageCode, listUrl: listUrl, progressLabel: progressLabel, readerLabel: readerLabel, missingVersesFromStatus: missingVersesFromStatus, STATUS_FOLDER: '1JkplywPuY1HmqKz5RvsIt-iJKlG1l493' };
+})();
+if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
+
 /* ---- vbv-drive.js ---- */
 /* VBV M4: Drive Save. The recorder's storage (§E) backed by Google Drive.
    Writes only into 00 Inbox (by id). Exact whole-name match 'Book C.V.wav'. New file = one multipart/resumable create;
@@ -9802,12 +9600,18 @@ var VBVRec = (() => {
       emit(); kick();
     }).catch(function () { emit(); });
 
+    function isStitch(t) { return t.kind === 'stitch'; }
     function pub(t) { return { id: t.id, file: t.file, state: t.state, tries: t.tries, error: t.error || null, at: t.at, drive_id: t.drive_id || null, sha256: t.sha256, why: t.why || null }; }
-    function queue() { return Array.from(items.values()).map(pub); }
+    function queue() { return Array.from(items.values()).filter(function (t) { return !isStitch(t); }).map(pub); }
+    function stitchQueue() { return Array.from(items.values()).filter(isStitch).map(pub); }
     function emit() { var q = queue(); listeners.slice().forEach(function (f) { try { f(q); } catch (e) {} }); }
     function persist(t) { return put('takes', t).catch(function () {}); }
     function set(t, state, error, why) { t.state = state; t.error = error || null; t.why = why || null; persist(t); emit(); }
 
+    function enqueue(t) {
+      items.set(t.id, t);
+      return put('takes', t).then(function () { emit(); kick(); return { queued: true, sha256: t.sha256, file: t.file, id: t.id }; });
+    }
     function saveVerse(id, wav, meta) {
       meta = meta || {};
       var gate = meta.gate && meta.gate.overall;
@@ -9815,10 +9619,22 @@ var VBVRec = (() => {
       var ab = wav instanceof ArrayBuffer ? wav : (wav.buffer ? wav.buffer.slice(wav.byteOffset, wav.byteOffset + wav.byteLength) : wav);
       return sha256(ab).then(function (sum) {
         var prev = items.get(id);
-        var t = { id: id, file: meta.file || (refOf(id) + '.wav'), wav: ab, sha256: sum, meta: meta, gate: gate === 'WARN' ? 'WARN-OK' : gate,
-          state: 'saving', tries: 0, nextAt: 0, at: new Date().toISOString(), seq: Math.max((prev && prev.seq) || 0, (files.get(id) || {}).rev || 0) + 1, drive_id: (files.get(id) || {}).fileId || null };
-        items.set(id, t);
-        return put('takes', t).then(function () { emit(); kick(); return { queued: true, sha256: sum }; });
+        return enqueue({ id: id, file: meta.file || (refOf(id) + '.wav'), wav: ab, sha256: sum, meta: meta, gate: gate === 'WARN' ? 'WARN-OK' : gate,
+          state: 'saving', tries: 0, nextAt: 0, at: new Date().toISOString(), seq: Math.max((prev && prev.seq) || 0, (files.get(id) || {}).rev || 0) + 1, drive_id: (files.get(id) || {}).fileId || null, mime: 'audio/wav' });
+      });
+    }
+    // m3.7: Stitch now writes a plain-text request into 00 Inbox; same queue, lookup-by-name overwrite, and retry as a verse WAV
+    function saveStitchRequest(spec) {
+      spec = spec || {};
+      var book = spec.book, chapter = spec.chapter == null ? null : spec.chapter;
+      var file = chapter == null ? book + '.stitch-request' : book + ' ' + chapter + '.stitch-request';
+      var body = JSON.stringify({ book: book, chapter: chapter, requestedAt: spec.requestedAt || new Date().toISOString(), verses: spec.verses | 0 });
+      var u8 = new TextEncoder().encode(body), ab = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
+      var id = 'stitch:' + file;
+      return sha256(ab).then(function (sum) {
+        var prev = items.get(id);
+        return enqueue({ id: id, kind: 'stitch', file: file, mime: 'text/plain', wav: ab, sha256: sum, meta: {}, gate: null,
+          state: 'saving', tries: 0, nextAt: 0, at: new Date().toISOString(), seq: Math.max((prev && prev.seq) || 0, (files.get(id) || {}).rev || 0) + 1, drive_id: (files.get(id) || {}).fileId || null });
       });
     }
 
@@ -9834,9 +9650,11 @@ var VBVRec = (() => {
         t.drive_id = r.fileId; files.set(t.id, { id: t.id, fileId: r.fileId, sha256: r.sha256, at: t.at, rev: t.seq, file: t.file });
         put('files', files.get(t.id)).catch(function () {});
         delete t.wav; t.state = 'saved'; t.error = null; t.why = null; del('takes', t.id).catch(function () {}); emit();
-        var m = t.meta || {};
-        var h = { id: t.id, ref: refOf(t.id), file: t.file, drive_id: r.fileId, sha256: t.sha256, bytes: r.bytes, duration_s: m.duration_s, speech_start_s: m.speech_start_s, speech_end_s: m.speech_end_s, gate: t.gate, take_at: m.take_at, retake: !!m.retake, resampled: !!m.resampled, replaced: r.replaced };
-        savedCbs.slice().forEach(function (f) { try { f(h); } catch (e) {} });
+        if (!isStitch(t)) {
+          var m = t.meta || {};
+          var h = { id: t.id, ref: refOf(t.id), file: t.file, drive_id: r.fileId, sha256: t.sha256, bytes: r.bytes, duration_s: m.duration_s, speech_start_s: m.speech_start_s, speech_end_s: m.speech_end_s, gate: t.gate, take_at: m.take_at, retake: !!m.retake, resampled: !!m.resampled, replaced: r.replaced };
+          savedCbs.slice().forEach(function (f) { try { f(h); } catch (e) {} });
+        }
         kick();
       }, function (e) {
         busy = false;
@@ -9902,20 +9720,21 @@ var VBVRec = (() => {
       for (var k in p) if (k !== 'vbv_stitch_req' && p[k] != null) out[k] = String(p[k]);
       return out;
     }
-    function multipart(meta, ab) {
+    function multipart(meta, ab, mime) {
       var b = 'vbv' + Math.random().toString(36).slice(2) + Date.now().toString(36);
-      var head = '--' + b + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(meta) + '\r\n--' + b + '\r\nContent-Type: audio/wav\r\n\r\n';
+      var head = '--' + b + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(meta) + '\r\n--' + b + '\r\nContent-Type: ' + (mime || 'audio/wav') + '\r\n\r\n';
       return { body: new Blob([head, ab, '\r\n--' + b + '--']), type: 'multipart/related; boundary=' + b };
     }
     function send(method, fileId, meta, t, tok) {
       var base = UP + (fileId ? '/' + encodeURIComponent(fileId) : '');
       var qs = '&fields=' + encodeURIComponent(FIELDS) + '&supportsAllDrives=true';
+      var mime = t.mime || 'audio/wav';
       if (t.wav.byteLength <= bigBytes) {
-        var mp = multipart(meta, t.wav);
+        var mp = multipart(meta, t.wav, mime);
         return call(method, base + '?uploadType=multipart' + qs, tok, mp.body, { 'Content-Type': mp.type }).then(json);
       }
-      return call(method, base + '?uploadType=resumable' + qs, tok, JSON.stringify(meta), { 'Content-Type': 'application/json; charset=UTF-8', 'X-Upload-Content-Type': 'audio/wav', 'X-Upload-Content-Length': String(t.wav.byteLength) })
-        .then(function (r) { var loc = r.headers.get('Location'); if (!loc) throw err('http', 'Drive gave no upload address'); return call('PUT', loc, tok, new Blob([t.wav]), { 'Content-Type': 'audio/wav' }).then(json); });
+      return call(method, base + '?uploadType=resumable' + qs, tok, JSON.stringify(meta), { 'Content-Type': 'application/json; charset=UTF-8', 'X-Upload-Content-Type': mime, 'X-Upload-Content-Length': String(t.wav.byteLength) })
+        .then(function (r) { var loc = r.headers.get('Location'); if (!loc) throw err('http', 'Drive gave no upload address'); return call('PUT', loc, tok, new Blob([t.wav]), { 'Content-Type': mime }).then(json); });
     }
     function verify(res, t, tok) {
       var got = res.sha256Checksum ? Promise.resolve(res) : call('GET', API + '/' + encodeURIComponent(res.id) + '?fields=id,sha256Checksum,size&supportsAllDrives=true', tok).then(json).catch(function () { return {}; });
@@ -9928,13 +9747,14 @@ var VBVRec = (() => {
       var tok = token();
       if (!tok) return Promise.reject(err('signin', 'Google sign-in has run out'));
       if (!inboxGranted()) return Promise.reject(err('folder', 'Choose the 00 Inbox folder once'));
-      var meta = props(t);
+      var meta = isStitch(t) ? {} : props(t);
+      var mime = t.mime || 'audio/wav';
       function wrap(e) { if (e && e.kind === 'auth') e.token = tok; throw e; }
       function patch(fileId) {
-        return send('PATCH', fileId, { appProperties: meta, properties: meta, mimeType: 'audio/wav' }, t, tok).then(function (res) { return verify(res, t, tok); }).then(function (r) { r.replaced = true; return r; });
+        return send('PATCH', fileId, { appProperties: meta, properties: meta, mimeType: mime }, t, tok).then(function (res) { return verify(res, t, tok); }).then(function (r) { r.replaced = true; return r; });
       }
       function create() {
-        return send('POST', null, { name: t.file, parents: [INBOX], mimeType: 'audio/wav', appProperties: meta, properties: meta }, t, tok)
+        return send('POST', null, { name: t.file, parents: [INBOX], mimeType: mime, appProperties: meta, properties: meta }, t, tok)
           .then(function (res) { return verify(res, t, tok).then(function (r) { r.replaced = false; return r; }); })
           .catch(function (e) { if (e.kind === 'http' && e.status === 404) { try { localStorage.removeItem(PICK_KEY); } catch (x) {} throw err('folder', 'Choose the 00 Inbox folder once'); } throw e; });
       }
@@ -9959,7 +9779,9 @@ var VBVRec = (() => {
     return {
       kind: 'drive', ready: ready,
       saveVerse: saveVerse,
-      pending: function () { var n = 0; items.forEach(function (t) { if (t.state !== 'saved') n++; }); return n; },
+      saveStitchRequest: saveStitchRequest,
+      pending: function () { var n = 0; items.forEach(function (t) { if (!isStitch(t) && t.state !== 'saved') n++; }); return n; },
+      stitchQueue: stitchQueue,
       queue: queue,
       onQueueChange: function (f) { listeners.push(f); return function () { listeners = listeners.filter(function (x) { return x !== f; }); }; },
       onVerseSaved: function (f) { savedCbs.push(f); return function () { savedCbs = savedCbs.filter(function (x) { return x !== f; }); }; },
@@ -10009,7 +9831,35 @@ var VBVRec = (() => {
     }).then(function () { badToken = null; return inboxGranted() ? INBOX : pickInbox(); });
   }
 
-  window.VBVDrive = { createStorage: createStorage, signInAgain: signInAgain, pickInbox: pickInbox, inboxGranted: inboxGranted, INBOX: INBOX, ROOT: ROOT, PICK_KEY: PICK_KEY };
+/* ---------- m3.7: read-only list of VideoBot status files (never writes) ---------- */
+  var STATUS_FOLDER = '1JkplywPuY1HmqKz5RvsIt-iJKlG1l493';
+  function listStatusFolder() {
+    var tok = token();
+    if (!tok) return Promise.reject(err('signin', 'Status not available yet'));
+    var base = (window.VBVVideoStatus && VBVVideoStatus.listUrl) ? VBVVideoStatus.listUrl(STATUS_FOLDER)
+      : 'https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent("'" + STATUS_FOLDER + "' in parents and trashed = false") +
+        '&fields=' + encodeURIComponent('nextPageToken,files(id,name,modifiedTime)') + '&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true';
+    function page(pageToken, acc) {
+      var url = base + (pageToken ? (base.indexOf('?') >= 0 ? '&' : '?') + 'pageToken=' + encodeURIComponent(pageToken) : '');
+      return call('GET', url, tok).then(json).then(function (j) {
+        var files = acc.concat(j.files || []);
+        return j.nextPageToken ? page(j.nextPageToken, files) : files;
+      });
+    }
+    return page(null, []).catch(function (e) {
+      throw err(e.kind || 'http', 'Status not available yet', { status: e.status, reason: e.reason });
+    });
+  }
+
+  function readStatusFile(id) {
+    var tok = token();
+    if (!tok || !id) return Promise.resolve(null);
+    return call('GET', API + '/' + encodeURIComponent(id) + '?alt=media', tok).then(function (r) { return r.text(); }).then(function (t) {
+      try { return JSON.parse(t); } catch (e) { return null; }
+    }).catch(function () { return null; });
+  }
+  window.VBVDrive = { createStorage: createStorage, signInAgain: signInAgain, pickInbox: pickInbox, inboxGranted: inboxGranted, INBOX: INBOX, ROOT: ROOT, PICK_KEY: PICK_KEY, listStatusFolder: listStatusFolder, readStatusFile: readStatusFile, STATUS_FOLDER: STATUS_FOLDER };
+
 })();
 
 /* ---- vbv-recorder-shell.js ---- */
@@ -10040,7 +9890,7 @@ var VBVRec = (() => {
     if (window.VBVDrive && !opts.fake) { // m3.4 (Robin 20:48): real Drive save into 00 Inbox (vbv-drive.js); background upload, retakes overwrite the same fileId
       s = VBVDrive.createStorage(Object.assign({ refOf: R.refOf }, opts)); s.onVerseSaved(onSaved);
     } else { s = R.createMemoryStorage(Object.assign({ delay: 700, retryDelayMs: 5000, maxAutoRetries: 2 }, opts)); s.onVerseSaved = onSaved; }
-    s.onQueueChange(function () { pushSaveStates(); qListeners.forEach(function (f) { try { f(); } catch (e) {} }); if (VBV.driveBanner) VBV.driveBanner(); });
+    s.onQueueChange(function () { pushSaveStates(); qListeners.forEach(function (f) { try { f(); } catch (e) {} }); if (VBV.driveBanner) VBV.driveBanner(); if (typeof showStitchStrip === 'function') showStitchStrip(); });
     return s;
   }
   storage = {
@@ -10054,13 +9904,15 @@ var VBVRec = (() => {
     get fileIds() { return inner.fileIds; }, get files() { return inner.files; }, get kind() { return inner.kind || 'm3-local-fake'; },
     fileIdOf: function (id) { return inner.fileIdOf ? inner.fileIdOf(id) : (inner.fileIds && inner.fileIds.get(id)) || null; },
     needsSignIn: function () { return inner.needsSignIn ? inner.needsSignIn() : false; },
+    saveStitchRequest: function (spec) { return inner.saveStitchRequest ? inner.saveStitchRequest(spec) : Promise.reject(new Error('Stitch request needs Google Drive')); },
+    stitchQueue: function () { return inner.stitchQueue ? inner.stitchQueue() : []; },
     stop: function () {} // a unit switch or tab change never stops the upload queue
   };
   var lastStates = {};
   function pushSaveStates() {
     if (!inner || !VBV.setSaveState) return;
     var now = {}, list = [];
-    inner.queue().forEach(function (it) { now[it.id] = it.state === 'saving' ? 'saving' : (it.state === 'failed' || it.state === 'needs-signin') ? 'failed' : null; });
+    inner.queue().forEach(function (it) { if (String(it.id).indexOf('stitch:') === 0) return; now[it.id] = it.state === 'saving' ? 'saving' : (it.state === 'failed' || it.state === 'needs-signin') ? 'failed' : null; });
     Object.keys(lastStates).forEach(function (id) { if (!(id in now) && lastStates[id]) list.push({ index: id, state: null }); });
     Object.keys(now).forEach(function (id) { if (now[id] !== (lastStates[id] || null)) list.push({ index: id, state: now[id] }); });
     lastStates = now; if (list.length) VBV.setSaveState(list);
@@ -10118,15 +9970,88 @@ var VBVRec = (() => {
     });
   }).observe(mountEl, { subtree: true, childList: true, attributes: true, attributeFilter: ['style'] });
 
-  var stitchMsgFor = null;
-  function showStitchMsg() {
-    var panel = mountEl.querySelector('.vbv-stitch-panel'); if (!panel || !unitCur || stitchMsgFor !== unitCur.stem) return;
-    if (panel.querySelector('.vbvr-stitch-msg')) return;
-    var p = document.createElement('p'); p.className = 'vbv-complete-note vbvr-stitch-msg'; p.setAttribute('role', 'status');
-    p.textContent = 'This chapter will stitch on its own once every verse is in.';
-    panel.insertBefore(p, panel.querySelector('.vbv-stitch-actions'));
+  var STITCH_NOTE = "VideoBot stitches complete chapters at its daily 21:00 check. Stitch now leaves a request so it's picked up then, or sooner if Robin asks VideoBot.";
+  var stitchJob = null; // { id, for } the last Stitch now request for this unit
+  function chapterVerseIds(unit) {
+    var DM = window.DotsMap, b = DM && unit && DM.BOOKS && DM.BOOKS.filter(function (x) { return x.code === unit.code; })[0];
+    if (!b) return (unit && unit.ids) ? unit.ids.slice() : [];
+    var chs = (unit.whole && (b.short || b.chapters === 1)) ? b.counts.map(function (_, i) { return i + 1; }) : [unit.chapter];
+    var out = [];
+    chs.forEach(function (ch) { var n = b.counts[ch - 1] || 0; for (var v = 1; v <= n; v++) out.push(b.code + '.' + ch + '.' + v); });
+    return out;
   }
-  new MutationObserver(showStitchMsg).observe(mountEl, { childList: true, subtree: true });
+  function verseIsSaved(id) {
+    if (storage && storage.stateOf) { var st = storage.stateOf(id); if (st === 'saved') return true; if (storage.kind === 'drive') return false; }
+    return !!(VBV.stageOf && VBV.stageOf(id)) || !!(handle && handle.recorder && handle.recorder.statuses && handle.recorder.statuses[id] === 'SAVED');
+  }
+  function stitchReadiness() {
+    var ids = chapterVerseIds(unitCur), n = ids.length, saved = 0;
+    ids.forEach(function (id) { if (verseIsSaved(id)) saved++; });
+    return { n: n, saved: saved, m: Math.max(0, n - saved), ready: n > 0 && saved === n };
+  }
+  VBV.stitchReadiness = stitchReadiness;
+  function updateStitchNow() {
+    var panel = mountEl.querySelector('.vbv-stitch-panel'); if (!panel || !unitCur) return;
+    var btn = panel.querySelector('[data-action="stitch"]'), r = stitchReadiness();
+    var hint = panel.querySelector('.vbvr-stitch-lock');
+    if (!btn) return;
+    if (!r.ready) {
+      if (!btn.disabled) { btn.disabled = true; btn.setAttribute('aria-disabled', 'true'); }
+      if (!hint) {
+        hint = document.createElement('p'); hint.className = 'vbv-complete-note vbvr-stitch-lock'; hint.setAttribute('role', 'status');
+        panel.insertBefore(hint, panel.querySelector('.vbv-stitch-actions'));
+      }
+      var msg = 'Stitch now unlocks when all ' + r.n + ' verses are saved (' + r.m + ' to go)';
+      if (hint.hidden) hint.hidden = false;
+      if (hint.textContent !== msg) hint.textContent = msg;
+    } else {
+      if (btn.disabled) { btn.disabled = false; btn.removeAttribute('aria-disabled'); }
+      if (hint && !hint.hidden) hint.hidden = true;
+    }
+  }
+  var stitchObs = null;
+  function showStitchStrip() {
+    if (stitchObs) stitchObs.disconnect();
+    try {
+      var note = mountEl.querySelector('.vbv-complete-note:not(.vbvr-stitch-lock)');
+      if (note && note.textContent.indexOf('Stitching starts by itself when the last verse is saved') !== -1) note.textContent = STITCH_NOTE;
+      updateStitchNow();
+      var panel = mountEl.querySelector('.vbv-stitch-panel'); if (!panel) return;
+      if (!stitchJob || !unitCur || stitchJob.for !== unitCur.stem) return;
+      var q = (storage.stitchQueue ? storage.stitchQueue() : []).filter(function (it) { return it.id === stitchJob.id; })[0];
+      var need = q && q.state === 'needs-signin';
+      var el = panel.querySelector('.vbvr-stitch-strip');
+      if (need) { if (el && !el.hidden) el.hidden = true; if (VBV.driveBanner) VBV.driveBanner(); return; }
+      var kind = (q && q.state === 'failed') ? 'failed' : (q && q.state === 'saving') ? 'saving' : ((q && q.state === 'saved') || (storage.fileIdOf && storage.fileIdOf(stitchJob.id))) ? 'saved' : 'hide';
+      if (kind === 'saving' || kind === 'hide') { if (el && !el.hidden) el.hidden = true; return; }
+      if (!el) {
+        el = document.createElement('div'); el.className = 'vbv-save-strip vbvr-stitch-strip'; el.setAttribute('role', 'status');
+        panel.insertBefore(el, panel.querySelector('.vbv-stitch-actions'));
+      }
+      if (el.hidden) el.hidden = false;
+      if (kind === 'failed') {
+        if (el.getAttribute('data-stitch-strip') !== 'failed') {
+          el.setAttribute('data-stitch-strip', 'failed');
+          el.textContent = '';
+          el.appendChild(document.createTextNode('Stitch request not sent \u00b7 '));
+          var btn = document.createElement('button'); btn.type = 'button'; btn.className = 'vbv-strip-action'; btn.textContent = 'Try again';
+          btn.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); if (storage.retry) storage.retry(stitchJob.id); });
+          el.appendChild(btn);
+        }
+      } else {
+        var okMsg = 'Stitch request sent. VideoBot picks it up at 21:00.';
+        if (el.getAttribute('data-stitch-strip') !== 'saved' || el.textContent !== okMsg) {
+          el.setAttribute('data-stitch-strip', 'saved');
+          el.textContent = okMsg;
+        }
+      }
+    } finally {
+      if (stitchObs) stitchObs.observe(mountEl, { childList: true, subtree: true });
+    }
+  }
+  stitchObs = new MutationObserver(showStitchStrip);
+  stitchObs.observe(mountEl, { childList: true, subtree: true });
+
 
   // ---------- m3.3 (Robin 20:41): Record, Stop and Re-record always shown together ----------
   // One bar under KJBVR's screen (outside its repainted root, so a tap is never lost to a repaint). Buttons that can't act now are
@@ -10248,7 +10173,22 @@ var VBVRec = (() => {
           if (h.retake && (prev.st | 0) >= 2) { var u = (VBVStages.doc().units || {})[stem] || {}; VBVStages.setUnit(stem, Object.assign({}, u, { restitch: true })); }
         },
         onUnitComplete: function (info) { VBVStages.localStitch(info.stem, { state: 'all-recorded', pending: info.pending.length, failed: info.failed.length }); },
-        onStitchNow: function () { stitchMsgFor = unitCur && unitCur.stem; showStitchMsg(); }, // sends nothing (CoS 18:31); VideoBot stitches when every WAV is in
+        onStitchNow: function () { // m3.7: write <Book> <C>.stitch-request (or <Book>.stitch-request for a whole short book) into 00 Inbox
+          if (!unitCur) return;
+          var ready = stitchReadiness(); if (!ready.ready) { updateStitchNow(); return; } // never send a request for a partial chapter
+          if (!driveOn() || !tokenOk() || !window.VBVDrive || !VBVDrive.inboxGranted()) { driveBanner(); return; }
+          var id0 = unitCur.ids && unitCur.ids[0], ref = id0 && R.refOf(id0), sp = ref ? ref.lastIndexOf(' ') : -1;
+          var book = sp > 0 ? ref.slice(0, sp) : (unitCur.name || 'Book');
+          var chapter = unitCur.whole ? null : unitCur.chapter;
+          var verses = unitCur.ids.filter(function (id) {
+            return (VBV.stageOf && VBV.stageOf(id)) || (handle && handle.recorder && handle.recorder.statuses && handle.recorder.statuses[id] === 'SAVED');
+          }).length;
+          var file = chapter == null ? book + '.stitch-request' : book + ' ' + chapter + '.stitch-request';
+          stitchJob = { id: 'stitch:' + file, for: unitCur.stem };
+          storage.saveStitchRequest({ book: book, chapter: chapter, requestedAt: new Date().toISOString(), verses: verses }).then(function (r) {
+            if (r && r.id) stitchJob.id = r.id; showStitchStrip();
+          }, function () { showStitchStrip(); });
+        }
       });
       handle.ready.then(function () { if (!mountEl.contains(document.activeElement)) { var h = mountEl.querySelector('h1, h2, [tabindex="-1"]'); if (h) try { h.focus({ preventScroll: true }); } catch (e) {} } });
       return handle;
@@ -10257,6 +10197,106 @@ var VBVRec = (() => {
   VBV.openVerseRecorder = openVerseRecorder;
   VBV.recHandle = function () { return handle; };
   VBV.recUnit = function () { return unitCur; };
+})();
+
+/* ---- vbv-status-views.js ---- */
+/* m3.7: Progress is the only status view of VideoBot's .vbstatus files.
+   One row per chapter, showing the latest status across the whole flow.
+   Lists 00 Video status by id with the existing token. Never writes. No auto-polling; refreshes when the tab opens or Refresh is tapped. */
+(function () {
+  'use strict';
+  var VS = window.VBVVideoStatus, $ = function (id) { return document.getElementById(id); };
+  if (!VS) return;
+  var cache = { files: null, error: null, at: 0 };
+  var units = null;
+
+  function bookOrder() {
+    if (units) return units;
+    var DM = window.DotsMap; units = (DM && DM.BOOKS) ? VS.unitSet(DM) : new Set();
+    return units;
+  }
+
+  function ensurePanel() {
+    var section = $('app-stitch'); if (!section) return null;
+    var wrap = section.querySelector('.kjb-wrap'); if (!wrap) return null;
+    var h = wrap.querySelector('.kjb-titlerow h1'); if (h && h.textContent === 'Stitch') h.textContent = 'Progress';
+    var box = section.querySelector('.vbv-status');
+    if (!box) {
+      box = document.createElement('div'); box.className = 'kjb-panel vbv-status'; box.setAttribute('data-vbv-status', 'stitch');
+      var head = document.createElement('div'); head.className = 'vbv-status-head';
+      var btn = document.createElement('button'); btn.type = 'button'; btn.className = 'kjb-second vbv-status-refresh'; btn.textContent = 'Refresh';
+      btn.addEventListener('click', function () { load(true).then(function () { render(); }); });
+      head.appendChild(btn);
+      var msg = document.createElement('p'); msg.className = 'kjb-muted vbv-status-msg'; msg.setAttribute('role', 'status');
+      var list = document.createElement('ul'); list.className = 'vbv-status-list'; list.setAttribute('role', 'list');
+      box.appendChild(head); box.appendChild(msg); box.appendChild(list);
+      var empty = wrap.querySelector('.vbv-empty');
+      if (empty) empty.replaceWith(box);
+      else {
+        var row = wrap.querySelector('.kjb-titlerow');
+        if (row && row.nextSibling) wrap.insertBefore(box, row.nextSibling);
+        else wrap.appendChild(box);
+      }
+    }
+    return box;
+  }
+
+  function render() {
+    var box = ensurePanel(); if (!box) return;
+    var msg = box.querySelector('.vbv-status-msg'), list = box.querySelector('.vbv-status-list');
+    list.textContent = '';
+    if (cache.error || !cache.files) {
+      msg.hidden = false; msg.textContent = 'Status not available yet'; list.hidden = true; return;
+    }
+    var map = VS.statusFromFiles(cache.files, bookOrder());
+    var names = Object.keys(map);
+    if (window.DotsMap && DotsMap.BOOKS) {
+      var order = [];
+      DotsMap.BOOKS.forEach(function (b) {
+        var disp = b.code === 'PSA' ? 'Psalm' : b.name;
+        if (map[b.name]) order.push(b.name);
+        for (var c = 1; c <= b.chapters; c++) { var u = disp + ' ' + c; if (map[u]) order.push(u); }
+      });
+      names = order;
+    }
+    if (!names.length) { msg.hidden = false; msg.textContent = 'No chapter status yet.'; list.hidden = true; return; }
+    msg.hidden = true; list.hidden = false;
+    names.forEach(function (unit) {
+      var li = document.createElement('li'); li.className = 'vbv-status-row';
+      var n = document.createElement('span'); n.className = 'vbv-status-unit'; n.textContent = unit;
+      var st = document.createElement('span'); st.className = 'vbv-status-state';
+      var lab = VS.progressLabel(map[unit].status);
+      if (map[unit].status === 'held') {
+        lab = 'Held: please check';
+        var miss = map[unit].missingVerses || [];
+        if (miss.length) lab += ' \u00b7 ' + miss.join(', ');
+      }
+      st.textContent = lab;
+      li.appendChild(n); li.appendChild(st); list.appendChild(li);
+    });
+  }
+
+  function load(force) {
+    if (!force && cache.files && !cache.error) return Promise.resolve(cache);
+    cache.error = null;
+    if (!window.VBVDrive || !VBVDrive.listStatusFolder) { cache.error = 'unavailable'; cache.files = null; return Promise.resolve(cache); }
+    return VBVDrive.listStatusFolder().then(function (files) {
+      files = files || [];
+      var held = files.filter(function (f) { var p = VS.parseStatusName(f.name, bookOrder()); return p && p.status === 'held' && f.id && VBVDrive.readStatusFile; });
+      return Promise.all(held.map(function (f) {
+        return VBVDrive.readStatusFile(f.id).then(function (j) { f.missingVerses = VS.missingVersesFromStatus ? VS.missingVersesFromStatus(j) : []; });
+      })).then(function () { cache.files = files; cache.error = null; cache.at = Date.now(); return cache; });
+    }, function () { cache.files = null; cache.error = 'unavailable'; return cache; });
+  }
+
+  function show() {
+    var go = function () { ensurePanel(); render(); load(true).then(function () { render(); }); };
+    if (window.KJB && KJB.mount) KJB.mount('stitch').then(go, go); else go();
+  }
+
+  var tabBtn = document.getElementById('kjbtab-stitch');
+  if (tabBtn) tabBtn.textContent = 'Progress';
+  if (window.KJB && KJB.on) KJB.on('tab', function (t) { if (t === 'stitch') show(); });
 })();
 
 </script>
