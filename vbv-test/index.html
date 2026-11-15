@@ -1422,15 +1422,31 @@ html {
   .vbvr-modes { display: flex; } .vbvr-mode { flex: 1 1 50%; padding: 0 8px; }
 }
 
-/* m3.2: Re-record the verse Stop just saved (secondary style, reference never breaks, 16px floor) */
-#vbvRecMount .vbvr-rerec { display: flex; align-items: center; justify-content: center; flex: 0 0 auto; height: auto; min-height: 56px; width: calc(100% - 1120 * var(--scale) * 1px); max-width: 100%;
-  align-self: center; margin-top: 12px; padding: 6px 16px; font-size: max(18px, var(--fs-32)); font-weight: 700; white-space: normal; border-width: 2px; border-style: solid; border-radius: var(--radius-button, 12px); }
-@media (max-width: 600px) {
-  /* phone: Record and Re-record both stay on screen at the bottom (Re-record under Record) */
-  #vbvRecMount .vbvr-rerec { width: 100%; position: sticky; bottom: max(8px, env(safe-area-inset-bottom, 0px)); z-index: 2; box-shadow: 0 0 0 8px #000; }
-  #vbvRecMount .vbvr-has-rerec .vbv-btn-record { bottom: calc(max(8px, env(safe-area-inset-bottom, 0px)) + var(--vbvr-rrh, 56px) + 12px); }
-}
+/* m3.3 (Robin 20:41): Record, Stop and Re-record always together (one row on iPad; pinned at the bottom on the phone). Greyed when they can't act. */
+#vbvRecMount .vbv-root.vbvr-has-bar > [data-action="record"], #vbvRecMount .vbv-root.vbvr-has-bar > [data-action="stop"], #vbvRecMount .vbv-root.vbvr-has-bar [data-action="record-again"] { display: none !important; }
+#vbvRecMount .vbvr-bar { display: flex; flex-direction: row; gap: 14px; align-items: stretch; flex: 0 0 auto; margin: 14px 0 0; padding: 0 var(--space-margin, 24px); box-sizing: border-box; background: #000; font-family: var(--font-ui, 'OpenDyslexic', system-ui, sans-serif); letter-spacing: var(--letter-spacing, normal); }
+#vbvRecMount .vbvr-bar[hidden] { display: none; }
+#vbvRecMount .vbvr-bar .vbv-btn { flex: 1 1 0; min-width: 0; min-height: 64px; height: auto; margin: 0; padding: 6px 14px; display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  font-family: inherit; letter-spacing: inherit; font-size: max(18px, var(--fs-32)); font-weight: 700; line-height: 1.2; text-align: center; white-space: normal; border-width: 2px; border-style: solid; border-radius: var(--radius-button, 12px); cursor: pointer; appearance: none; -webkit-appearance: none; }
+#vbvRecMount .vbvr-bar .vbvr-b-re { flex: 1.6 1 0; }
+#vbvRecMount .vbvr-bar .vbv-btn { position: static; box-shadow: none; }
+#vbvRecMount .vbvr-bar .vbv-btn:disabled { opacity: .4; cursor: not-allowed; }
+#vbvRecMount .vbvr-bar .vbv-btn:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
 #vbvRecMount .vbvr-nowrap { white-space: nowrap; margin-left: 0.3em; }
+#vbvRecMount.vbvr-fixed > .vbv-root { flex: 1 1 auto; min-height: 0; height: auto; }
+#vbvRecMount.vbvr-fixed > .vbvr-bar { padding-bottom: 8px; }
+@media (max-width: 600px) {
+  /* phone: the bar is pinned at the bottom while the page scrolls; Record + Stop side by side, Re-record under them */
+  #vbvRecMount .vbvr-bar { position: sticky; bottom: 0; z-index: 3; flex-wrap: wrap; gap: 10px; padding: 10px 0 max(10px, env(safe-area-inset-bottom, 0px)); margin-top: 8px; box-shadow: 0 -2px 0 0 #333; }
+  #vbvRecMount .vbvr-bar .vbvr-b-rec, #vbvRecMount .vbvr-bar .vbvr-b-stop { flex: 1 1 calc(50% - 5px); }
+  #vbvRecMount .vbvr-bar .vbvr-b-re { flex: 1 1 100%; }
+  /* header only: the save strip goes on its own line under the reference, so it never covers "Genesis 1:2" or "2 of 31" */
+  #vbvRecMount .vbv-verse-head { flex-wrap: wrap; row-gap: 8px; align-items: flex-start; }
+  #vbvRecMount .vbv-ref { white-space: nowrap; flex: 1 0 auto; }
+  #vbvRecMount .vbv-head-right { flex: 1 1 100%; flex-wrap: wrap; justify-content: space-between; row-gap: 8px; }
+  #vbvRecMount .vbv-save-strip { height: auto; max-height: none; min-height: 40px; padding: 4px 12px; font-size: 16px; }
+  #vbvRecMount .vbv-n-of-m { margin-left: auto; }
+}
 
 /* ---- vbv-minfont.css ---- */
 /* Designer 18:25: no readable text below 16 CSS px at any size (phone included): tabs, banners, labels, status lines.
@@ -9708,11 +9724,12 @@ var VBVRec = (() => {
 
   // ---------- layout: landscape gets a definite height so KJBVR's fit can size the verse; never below 40 CSS px ----------
   function sizeMount() {
-    var land = innerWidth > innerHeight && innerWidth >= 900 && !!mountEl.querySelector('.vbv-verse');
+    var phone = innerWidth <= 600; // m3.3: the phone also gets a definite height, so the Record / Stop / Re-record bar sits under the verse (a long verse scrolls inside its panel)
+    var land = (innerWidth > innerHeight && innerWidth >= 900 || phone) && !!mountEl.querySelector('.vbv-verse');
     mountEl.classList.toggle('vbvr-fixed', land);
     if (!land || mountEl.hidden) { mountEl.style.height = ''; return; }
     var top = mountEl.getBoundingClientRect().top + (window.scrollY || 0);
-    mountEl.style.height = Math.max(520, Math.floor(innerHeight - top - 8)) + 'px';
+    mountEl.style.height = Math.max(phone ? 380 : 520, Math.floor(innerHeight - top - 8)) + 'px';
   }
   addEventListener('resize', function () { place(); sizeMount(); });
   // A verse that would need less than 40 CSS px to fit: keep 40 px and let the page grow (the whole verse shows; never clipped).
@@ -9736,26 +9753,39 @@ var VBVRec = (() => {
   }
   new MutationObserver(showStitchMsg).observe(mountEl, { childList: true, subtree: true });
 
-  // ---------- m3.2 (Robin 20:24): "Re-record <previous verse>" after Stop saved it and moved on ----------
-  // Shown on the next verse's Record screen (not while recording, not on a review/FAIL screen). Tap = go back to that verse and record
-  // it at once; Stop saves the new take over the old one (same file name; the save sends it as a retake) and moves on again.
+  // ---------- m3.3 (Robin 20:41): Record, Stop and Re-record always shown together ----------
+  // One bar under KJBVR's screen (outside its repainted root, so a tap is never lost to a repaint). Buttons that can't act now are
+  // greyed but stay. Stop saves (autoSave). Re-record = go back to the verse Stop last saved and record it at once; its Stop saves it
+  // over the same file (retake) and moves on again. KJBVR's own Record / Stop / Record again buttons are hidden by CSS.
   var justSaved = null; // verse id saved by the last Stop
-  function addRerecord() {
-    var r = handle && handle.recorder, root = mountEl.querySelector('.vbv-root'); if (!root) return;
-    var have = root.querySelector('.vbvr-rerec');
-    var show = !!(r && justSaved && root.dataset.screen === 'record' && root.dataset.recording !== '1' && r.verseId !== justSaved && r.ids.indexOf(justSaved) >= 0 && r.state === 'IDLE');
-    if (!show) { if (have) have.remove(); root.classList.remove('vbvr-has-rerec'); return; }
-    if (have && have.dataset.id === justSaved) return; if (have) have.remove();
-    var recBtn = root.querySelector('[data-action="record"]'); if (!recBtn) return;
-    var b = document.createElement('button'); b.type = 'button'; b.className = 'vbv-btn vbv-btn-secondary vbvr-rerec'; b.dataset.id = justSaved;
-    b.appendChild(document.createTextNode('Re-record')); var ref = document.createElement('span'); ref.className = 'vbvr-nowrap'; ref.textContent = R.refOf(justSaved); b.appendChild(ref);
-    b.setAttribute('aria-label', 'Re-record ' + R.refOf(justSaved) + ', the verse just saved');
-    b.addEventListener('click', function (e) { e.stopPropagation(); var rr = handle && handle.recorder, id = b.dataset.id; if (!rr || isBusy()) return;
-      try { rr.goTo(id); } catch (x) { return; } rr.record(); });
-    recBtn.parentNode.insertBefore(b, recBtn.nextSibling);
-    root.classList.add('vbvr-has-rerec'); root.style.setProperty('--vbvr-rrh', b.offsetHeight + 'px');
+  var bar = document.createElement('div'); bar.className = 'vbvr-bar'; bar.setAttribute('role', 'group'); bar.setAttribute('aria-label', 'Recording');
+  function mk(cls, txt) { var b = document.createElement('button'); b.type = 'button'; b.className = 'vbv-btn ' + cls; if (txt) b.textContent = txt; bar.appendChild(b); return b; }
+  var bRec = mk('vbv-btn-danger vbvr-b-rec', ''), bStop = mk('vbv-btn-primary vbvr-b-stop', 'Stop'), bRe = mk('vbv-btn-secondary vbvr-b-re vbvr-rerec', '');
+  var dot = document.createElement('span'); dot.className = 'vbv-rec-dot'; dot.setAttribute('aria-hidden', 'true'); bRec.appendChild(dot); bRec.appendChild(document.createTextNode(' Record'));
+  function setDis(b, d) { if (b.disabled !== d) { b.disabled = d; b.setAttribute('aria-disabled', String(d)); } }
+  function updateBar() {
+    var r = handle && handle.recorder, root = mountEl.querySelector('.vbv-root');
+    if (!r || !root) { bar.hidden = true; return; }
+    if (bar.parentNode !== mountEl || bar.previousElementSibling !== root) mountEl.appendChild(bar);
+    bar.hidden = false;
+    var st = r.state, screen = root.dataset.screen, busy = st === 'RECORDING' || st === 'STARTING' || st === 'PROCESSING' || st === 'SAVING';
+    setDis(bRec, busy || screen === 'complete');
+    setDis(bStop, st !== 'RECORDING');
+    var have = !!(justSaved && r.ids.indexOf(justSaved) >= 0);
+    var lab = have ? R.refOf(justSaved) : null;
+    if (bRe.dataset.id !== (have ? justSaved : '')) {
+      bRe.textContent = ''; bRe.dataset.id = have ? justSaved : '';
+      if (have) { bRe.appendChild(document.createTextNode('Re-record')); var sp = document.createElement('span'); sp.className = 'vbvr-nowrap'; sp.textContent = lab; bRe.appendChild(sp); bRe.setAttribute('aria-label', 'Re-record ' + lab + ', the verse Stop last saved'); }
+      else { bRe.textContent = 'Re-record previous verse'; bRe.setAttribute('aria-label', 'Re-record previous verse (none saved yet)'); }
+    }
+    setDis(bRe, !have || busy);
+    root.classList.add('vbvr-has-bar');
   }
-  new MutationObserver(function () { addRerecord(); }).observe(mountEl, { childList: true, subtree: true });
+  bRec.addEventListener('click', function () { var r = handle && handle.recorder; if (r && !bRec.disabled) r.record(); });
+  bStop.addEventListener('click', function () { var r = handle && handle.recorder; if (r && !bStop.disabled) r.stop(); });
+  bRe.addEventListener('click', function () { var r = handle && handle.recorder, id = bRe.dataset.id; if (!r || bRe.disabled || !id || isBusy()) return;
+    try { r.goTo(id); } catch (x) { return; } r.record(); });
+  new MutationObserver(function (m) { if (m.some(function (x) { return x.target !== bar && !bar.contains(x.target); })) updateBar(); }).observe(mountEl, { childList: true, subtree: true });
   VBV.justSaved = function () { return justSaved; };
 
   // ---------- mounting a unit ----------
@@ -9780,7 +9810,7 @@ var VBVRec = (() => {
         openMic: function (o) { return (micFactory || R.openMicInline)(o); },
         shell: { promptSignIn: function () { KJB.guardSay('Sign in comes with the Drive upload (M4).'); } },
         onTakeAccepted: function (h) { // Stop saved the take (m3.2): the verse is recorded now; the upload carries on in the background
-          justSaved = h.id;
+          justSaved = h.id; setTimeout(updateBar, 0);
           var prev = VBVStages.get(h.id) || {};
           VBVStages.setVerse(h.id, { st: Math.max(1, prev.st | 0), at: h.take_at, sha256: h.sha256, gate: h.gate && h.gate.overall, rev: (prev.rev | 0) + 1, trim: TRIM, drive_id: prev.drive_id || null });
           if (h.retake && (prev.st | 0) >= 2) { var u = (VBVStages.doc().units || {})[stem] || {}; VBVStages.setUnit(stem, Object.assign({}, u, { restitch: true })); }
