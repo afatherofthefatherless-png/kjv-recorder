@@ -791,6 +791,19 @@ html {
 .vbv-apptitle { margin: 0; font-weight: var(--font-weight-bold); font-size: max(var(--fs-44), 22px); line-height: 1.25; color: var(--color-fg); }
 .vbv-progtext { margin: 0; font-size: max(var(--fs-28), 16px); line-height: 1.4; color: var(--color-muted); text-align: right; font-variant-numeric: tabular-nums; }
 .vbv-progtext:empty { display: none; }
+/* m3.9: Drive signed-in marker — fixed width so the header does not jump; OpenDyslexic, 16px+, high contrast on black */
+.vbv-drive-mark { display: inline-flex; align-items: center; gap: 8px; box-sizing: border-box;
+  width: 34ch; min-width: 34ch; max-width: 34ch; margin: 0; padding: 6px 8px; min-height: 44px;
+  border: 1px solid var(--color-line); border-radius: var(--radius-button); background: var(--color-panel);
+  color: var(--color-fg); font-family: var(--font-ui); font-size: max(16px, var(--fs-28)); font-weight: var(--font-weight-bold);
+  line-height: 1.2; white-space: nowrap; text-align: left; cursor: pointer; vertical-align: middle; }
+.vbv-drive-mark:disabled { cursor: default; }
+.vbv-drive-mark:focus-visible { outline: var(--focus-outline); outline-offset: 2px; }
+.vbv-drive-mark-dot { flex: 0 0 12px; width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 0 0 1px #fff; background: #ff4d4d; }
+.vbv-drive-mark.is-ok .vbv-drive-mark-dot { background: var(--color-green); }
+.vbv-drive-mark.is-pick .vbv-drive-mark-dot { background: #ffd24d; }
+.vbv-drive-mark.is-off .vbv-drive-mark-dot { background: #ff4d4d; }
+.vbv-drive-mark-lab { overflow: hidden; text-overflow: clip; }
 .vbv-track, .shell-progress { position: relative; height: calc(8 * var(--scale) * 1px); border: 0; box-shadow: inset 0 0 0 1px var(--color-fg);
   border-radius: var(--radius-progress); background: var(--color-bg); margin: 6px 0 max(calc(14 * var(--scale) * 1px), 8px); overflow: hidden; box-sizing: border-box; }
 /* Designer 18:01/18:07 + KJBVR's fix 18:17: bar and fill are both 8 mock px x --scale (4 CSS px at 1024, 5.3 at 1366); the stroke is an inset box-shadow */
@@ -916,13 +929,14 @@ html {
 #vbv-home[data-vbv-level="chapters"] #vbvMap .dm-panel .dm-btns { display: none; } /* Record sits under each chapter instead */
 
 /* ---- vbv-phone.css ---- */
-/* Designer phone rule (18:36): at phone width the header is only the title, one progress line and the tabs; nothing else above the map.
+/* Designer phone rule (18:36): at phone width the header is the title, the Drive signed-in marker, one progress line and the tabs.
    The page scrolls normally: the map is never trapped in a fixed-height box. Tabs wrap at spaces only, never mid-word, never below 16px. */
 @media (max-width: 600px) {
   #shell-top { padding: calc(6px + env(safe-area-inset-top, 0px)) 10px 0; }
-  .vbv-head { display: block; }
-  .vbv-apptitle { font-size: 20px; line-height: 1.2; white-space: nowrap; }
-  .vbv-progtext { text-align: left; line-height: 1.3; margin-top: 2px; }
+  .vbv-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; }
+  .vbv-apptitle { font-size: 20px; line-height: 1.2; white-space: nowrap; flex: 1 1 auto; }
+  .vbv-drive-mark { flex: 1 1 100%; width: 100%; min-width: 0; max-width: none; }
+  .vbv-progtext { text-align: left; line-height: 1.3; margin-top: 2px; flex: 1 1 100%; }
   .vbv-track { margin: 4px 0 6px; }
   /* three short tabs (Tracker, Recorder, Progress) fit one row at 16px */
   .kjb-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 4px !important; padding-bottom: 6px !important; }
@@ -9486,7 +9500,7 @@ var VBVRec = (() => {
 var VBVVideoStatus = (function () {
   'use strict';
   var SEP = ' \u00b7 ', EXT = '.vbstatus';
-  var CODES = { waiting: 0, stitching: 1, rendering: 2, checking: 3, uploading: 3, held: 3, done: 4, 'done-private': 4, 'done-public': 4, error: 'error' };
+  var CODES = { waiting: 0, stitching: 1, rendering: 2, checking: 3, uploading: 3, held: 3, ready: 4, done: 4, 'done-private': 4, 'done-public': 4, error: 'error' };
   /** valid unit names from the dots-map book index: "Genesis 7", "Psalm 23", and "Jonah" / "Obadiah" for short or one-chapter books */
   function unitSet(DM) {
     var set = new Set();
@@ -9534,6 +9548,7 @@ var VBVVideoStatus = (function () {
   }
   function progressLabel(status) {
     if (status === 'held') return 'Held: please check';
+    if (status === 'ready') return 'Ready to watch';
     if (status === 'done-private' || status === 'done-public' || status === 'done') return 'done';
     if (status === 'uploading') return 'checking';
     return status || '';
@@ -9585,12 +9600,21 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
   var get = function (store, k) { return tx(store, 'readonly', function (s) { return s.get(k); }); };
 
   /* ---------- token + folder grant ---------- */
-  var badToken = null;
+  var badToken = null, authListeners = [];
   function token() {
     try { var t = JSON.parse(localStorage.getItem(TOKEN_KEY) || 'null'); if (t && t.token && t.expiresAt > Date.now() + 30000 && t.token !== badToken) return t.token; } catch (e) {}
     return null;
   }
   function inboxGranted() { try { return localStorage.getItem(PICK_KEY) === INBOX; } catch (e) { return false; } }
+  function tokenOk() { return !!token(); }
+  function authState() {
+    var tok = tokenOk(), folder = inboxGranted();
+    if (tok && folder) return { kind: 'ok', label: 'Drive: signed in' };
+    if (tok && !folder) return { kind: 'pick', label: 'Drive: signed in, pick 00 Inbox' };
+    return { kind: 'off', label: 'Drive: not signed in' };
+  }
+  function onAuthChange(f) { authListeners.push(f); return function () { authListeners = authListeners.filter(function (x) { return x !== f; }); }; }
+  function notifyAuth() { var s = authState(); authListeners.slice().forEach(function (f) { try { f(s); } catch (e) {} }); }
 
   /* ---------- HTTP ---------- */
   function call(method, url, tok, body, headers) {
@@ -9599,6 +9623,7 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
       if (r.ok) return r;
       return r.text().then(function (t) {
         var reason = ''; try { var j = JSON.parse(t); reason = (j.error && j.error.errors && j.error.errors[0] && j.error.errors[0].reason) || (j.error && j.error.status) || ''; } catch (e) {}
+        if (r.status === 401) { badToken = tok || badToken; notifyAuth(); }
         throw err(r.status === 401 ? 'auth' : 'http', 'Drive answered ' + r.status + (reason ? ' (' + reason + ')' : ''), { status: r.status, reason: reason });
       });
     }, function () { throw err('offline', 'No connection to Google Drive'); });
@@ -9834,6 +9859,7 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
                 var doc = (d.docs || [])[0] || {};
                 if (doc.id !== INBOX) return rej(err('wrong', 'That is not the 00 Inbox folder. Choose 00 Inbox inside 02 KJB verse audio.'));
                 try { localStorage.setItem(PICK_KEY, INBOX); } catch (e) {}
+                notifyAuth();
                 res(INBOX);
               }).build().setVisible(true);
           } catch (e) { rej(err('setup', 'Google Picker could not open')); }
@@ -9848,7 +9874,7 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
         var c = KJB.google.tokenClient({ who: 'vbv', callback: function (r) { if (r && r.access_token) res(true); else rej(err('signin', 'Sign-in did not finish')); }, error_callback: function () { rej(err('signin', 'Sign-in did not finish')); } });
         c.requestAccessToken({ prompt: '' });
       }, function () { rej(err('setup', 'Google sign-in could not load')); });
-    }).then(function () { badToken = null; return inboxGranted() ? INBOX : pickInbox(); });
+    }).then(function () { badToken = null; notifyAuth(); return inboxGranted() ? INBOX : pickInbox(); });
   }
 
 /* ---------- m3.7: read-only list of VideoBot status files (never writes) ---------- */
@@ -9878,8 +9904,64 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
       try { return JSON.parse(t); } catch (e) { return null; }
     }).catch(function () { return null; });
   }
-  window.VBVDrive = { createStorage: createStorage, signInAgain: signInAgain, pickInbox: pickInbox, inboxGranted: inboxGranted, INBOX: INBOX, ROOT: ROOT, PICK_KEY: PICK_KEY, listStatusFolder: listStatusFolder, readStatusFile: readStatusFile, STATUS_FOLDER: STATUS_FOLDER };
+  if (window.KJB && KJB.on) {
+    KJB.on('google-token', function () { badToken = null; notifyAuth(); });
+    KJB.on('google-token-cleared', function () { notifyAuth(); });
+  }
+  window.VBVDrive = { createStorage: createStorage, signInAgain: signInAgain, pickInbox: pickInbox, inboxGranted: inboxGranted, tokenOk: tokenOk, authState: authState, onAuthChange: onAuthChange, INBOX: INBOX, ROOT: ROOT, PICK_KEY: PICK_KEY, listStatusFolder: listStatusFolder, readStatusFile: readStatusFile, STATUS_FOLDER: STATUS_FOLDER };
 
+})();
+
+/* ---- vbv-drive-mark.js ---- */
+/* m3.9: always-visible Drive signed-in marker in the header. Reuses VBVDrive token + Inbox grant. */
+(function () {
+  'use strict';
+  var D = window.VBVDrive, head = document.querySelector('.vbv-head');
+  if (!D || !head || head.querySelector('.vbv-drive-mark')) return;
+
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'vbv-drive-mark';
+  btn.id = 'vbvDriveMark';
+  var dot = document.createElement('span'); dot.className = 'vbv-drive-mark-dot'; dot.setAttribute('aria-hidden', 'true');
+  var lab = document.createElement('span'); lab.className = 'vbv-drive-mark-lab';
+  btn.appendChild(dot); btn.appendChild(lab);
+  var prog = document.getElementById('vbvProgText');
+  if (prog && prog.parentNode === head) head.insertBefore(btn, prog);
+  else head.appendChild(btn);
+
+  var last = '';
+  function paint() {
+    var s = D.authState ? D.authState() : { kind: 'off', label: 'Drive: not signed in' };
+    var kind = s.kind || 'off';
+    var label = s.label || 'Drive: not signed in';
+    btn.classList.remove('is-ok', 'is-off', 'is-pick');
+    btn.classList.add(kind === 'ok' ? 'is-ok' : kind === 'pick' ? 'is-pick' : 'is-off');
+    lab.textContent = label;
+    btn.disabled = kind === 'ok';
+    if (kind === 'ok') {
+      btn.setAttribute('aria-label', label);
+      btn.removeAttribute('aria-haspopup');
+    } else if (kind === 'pick') {
+      btn.setAttribute('aria-label', 'Drive: signed in, pick 00 Inbox. Tap to choose the folder.');
+    } else {
+      btn.setAttribute('aria-label', 'Drive: not signed in. Tap to connect or sign in again.');
+    }
+    if (label !== last) last = label;
+  }
+
+  btn.addEventListener('click', function () {
+    var s = D.authState ? D.authState() : { kind: 'off' };
+    if (s.kind === 'ok') return;
+    var go = (s.kind === 'pick' && D.pickInbox) ? D.pickInbox() : D.signInAgain();
+    go.then(function () { paint(); if (window.VBV && VBV.driveBanner) VBV.driveBanner(); },
+      function () { paint(); if (window.VBV && VBV.driveBanner) VBV.driveBanner(); });
+  });
+
+  paint();
+  if (D.onAuthChange) D.onAuthChange(paint);
+  setInterval(paint, 60000);
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') paint(); });
 })();
 
 /* ---- vbv-recorder-shell.js ---- */
