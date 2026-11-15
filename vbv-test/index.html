@@ -7325,17 +7325,18 @@ var VBVRec = (() => {
   var GATE_SHARED = Object.freeze({
     wordsPerSecond: 2.5,
     durationPass: Object.freeze([0.65, 1.6]),
-    durationWarn: Object.freeze([0.5, 2]),
+    durationWarn: Object.freeze([0.5, 2.5]),
     clipLevel: 0.999,
     clipMaxRatio: 1e-4,
     clipMaxRun: 3,
     floorPassMax: -55,
-    floorWarnMax: -45,
+    floorWarnMax: -40,
     snrPassMin: 25,
-    snrWarnMin: 15,
+    snrWarnMin: 12,
     silencePassMax: 2.5,
     silenceWarnMax: 4,
     lufsPassTol: 1,
+    lufsWarnTol: 8,
     spreadPassMax: 2,
     spreadWarnMax: 3
   });
@@ -8020,7 +8021,7 @@ var VBVRec = (() => {
     c.internal_silence = { value: r3(sil), status: sil < gate.silencePassMax ? PASS : sil <= gate.silenceWarnMax ? WARN : FAIL };
     const L = integratedLufs(s, sr);
     const d = Math.abs(L - LOUDNESS.targetLufs);
-    c.loudness = { value: r3(L), status: d <= gate.lufsPassTol ? PASS : d <= 3 ? WARN : FAIL };
+    c.loudness = { value: r3(L), status: d <= gate.lufsPassTol ? PASS : d <= (gate.lufsWarnTol || 3) ? WARN : FAIL };
     c._analysis = a;
     return c;
   }
@@ -8317,6 +8318,24 @@ var VBVRec = (() => {
     if (overall === "WARN" || overall === "WARN-OK") return "WARN-OK";
     return overall;
   }
+  // m3.5 (Builder-bot): the FAIL message names the reason in plain words and says "Tap Record" (the page's Record button).
+  function failWords(checks, gate) {
+    const c = checks || {}, f = (k) => c[k] && c[k].status === "FAIL", out = [];
+    if (f("format")) out.push("the recording format was wrong");
+    if (f("speech")) out.push("no voice heard");
+    if (f("duration")) out.push((c.duration.value || 0) < 1 ? "too short for this verse" : "too long for this verse");
+    if (f("lead_in")) out.push((c.lead_in.value || 0) < ((gate && gate.leadInFailMin) || 0.08) ? "you started a little too soon after tapping Record" : "too much silence before you started");
+    if (f("clipping")) out.push("too loud (the sound clipped)");
+    if (f("noise_floor")) out.push("too much background noise");
+    if (f("snr")) out.push("too quiet compared with the room noise");
+    if (f("internal_silence")) out.push("a pause was too long");
+    if (f("loudness")) out.push((c.loudness.value || 0) < LOUDNESS.targetLufs ? "too quiet" : "too loud");
+    return out;
+  }
+  function failMessage(checks, gate) {
+    const w = failWords(checks, gate), t = w.length ? w.join(", ") : "a check failed";
+    return "This take was not saved: " + t.charAt(0).toUpperCase() + t.slice(1) + ". Tap Record and read the verse again.";
+  }
   var MIC_BLOCKED_MSG = "Recording failed: the microphone is blocked for this site. On iPad: tap \u201CaA\u201D in the Safari address bar, Website Settings, Microphone, Allow (or Settings \u203A Apps \u203A Safari \u203A Microphone). Then reload the page and tap Record again.";
   function snipVerse(raw, sr, { calibration = null, dropTailMs, words = null, resampled = false, onset = ONSET, gate } = {}) {
     const C = onset || ONSET;
@@ -8552,7 +8571,8 @@ var VBVRec = (() => {
         return;
       }
       this.take = { verseId: this.verseId, createdAt: Date.now(), status: r.hardFail ? "failed" : "review", wav: r.wav, checks: r.checks, meta: r.meta, fileName: verseFileNameOfId(this.verseId) };
-      if (r.hardFail) this.message = "This take failed a check (see below). Tap Record again and read the verse again.";
+      if (r.hardFail) this.message = failMessage(r.checks, this.gate);
+      if (r.hardFail) try { localStorage.setItem("vbv.lastFail.v1", JSON.stringify({ at: (/* @__PURE__ */ new Date()).toISOString(), id: this.verseId, sr: this.mic && this.mic.sampleRate, checks: r.checks, meta: r.meta })); } catch (e) {}
       if (!r.hardFail && this.autoSave) {
         this.state = vTransition(this.state, "ready");
         await this.save();
@@ -8571,7 +8591,7 @@ var VBVRec = (() => {
       if (gateOverall(take.checks) === "FAIL") {
         this.lastSave = { ok: false, refused: true, reason: "FAIL" };
         this.saveError = "FAIL";
-        if (!this.message) this.message = "This take failed a check (see below). Tap Record again and read the verse again.";
+        if (!this.message) this.message = failMessage(take.checks, this.gate);
         this.emit();
         return;
       }
@@ -10081,7 +10101,7 @@ var VBVRec = (() => {
     if (bar.parentNode !== mountEl || bar.previousElementSibling !== root) mountEl.appendChild(bar);
     bar.hidden = false;
     var st = r.state, screen = root.dataset.screen, busy = st === 'RECORDING' || st === 'STARTING' || st === 'PROCESSING' || st === 'SAVING';
-    setDis(bRec, busy || screen === 'complete');
+    setDis(bRec, busy); // m3.5: greyed only while a take is recording or being saved
     setDis(bStop, st !== 'RECORDING');
     var have = !!(justSaved && r.ids.indexOf(justSaved) >= 0);
     var lab = have ? R.refOf(justSaved) : null;
