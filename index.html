@@ -478,7 +478,6 @@ details.kjb-sec > .in { padding: 0 14px 14px; }
 #app-recorder #goBtn, #app-recorder #sendBtn { min-height: 68px; font-size: 21px; font-weight: 700; }
 #app-recorder #ttHandoff { border: 2px solid #facc15; border-radius: 14px; padding: 12px 16px; margin: 0 0 16px; }
 #app-recorder #ttHandoff p { margin: 0 0 10px; font-weight: 700; }
-#app-recorder[data-stage="clean"] #ttSendHint, #app-recorder[data-stage="sent"] #ttSendHint { display: none; }
 @media (min-width: 900px) {
   .kjb-rgrid { grid-template-columns: 1fr 380px; align-items: start; }
   .kjb-rpass { grid-column: 1; grid-row: 1; }
@@ -804,6 +803,11 @@ html {
 .vbv-drive-mark.is-pick .vbv-drive-mark-dot { background: #ffd24d; }
 .vbv-drive-mark.is-off .vbv-drive-mark-dot { background: #ff4d4d; }
 .vbv-drive-mark-lab { overflow: hidden; text-overflow: clip; }
+/* m4.0: whole box coloured, high contrast (Robin 16 Nov) */
+.vbv-drive-mark.is-ok, .vbv-drive-mark.is-ok:disabled { background: #0a7d32; border-color: #ffffff; color: #ffffff; font-weight: 700; opacity: 1; }
+.vbv-drive-mark.is-off { background: #c62828; border-color: #ffffff; color: #ffffff; font-weight: 700; opacity: 1; }
+.vbv-drive-mark.is-pick { background: #ffd24d; border-color: #000000; color: #000000; font-weight: 700; opacity: 1; }
+.vbv-drive-mark .vbv-drive-mark-dot { display: none; }
 .vbv-track, .shell-progress { position: relative; height: calc(8 * var(--scale) * 1px); border: 0; box-shadow: inset 0 0 0 1px var(--color-fg);
   border-radius: var(--radius-progress); background: var(--color-bg); margin: 6px 0 max(calc(14 * var(--scale) * 1px), 8px); overflow: hidden; box-sizing: border-box; }
 /* Designer 18:01/18:07 + KJBVR's fix 18:17: bar and fill are both 8 mock px x --scale (4 CSS px at 1024, 5.3 at 1366); the stroke is an inset box-shadow */
@@ -1627,36 +1631,11 @@ html {
         <div class="status" id="inStatus" aria-live="polite"></div>
         <div class="warn" id="inWarn" hidden></div>
       </div>
-      <div class="kjb-step" id="ttStep2">
-        <h2 id="h-go">2. Clean version</h2>
-        <div class="btnrow" style="margin-top:12px"><button type="button" id="goBtn" disabled>Make clean version</button></div>
-        <div class="progress" id="prog" hidden aria-live="polite">
-      <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="barWrap"><div id="bar"></div></div>
-      <div class="stage" id="stage"></div>
-      <ul class="steps" id="steps">
-        <li data-s="decode">Reading the audio</li>
-        <li data-s="clean">Trimming the ends and evening the verse breaks</li>
-        <li data-s="encode">Making the WAV file</li>
-      </ul>
-    </div>
-        <div class="err" id="err" hidden role="alert"></div>
-      </div>
       <div class="kjb-step" id="ttStep3">
-        <h2 class="kjb-h3">3. Send</h2>
-        <p class="kjb-muted kjb-after" id="ttSendHint">After the clean version.</p>
-        <div id="ttResult" hidden aria-labelledby="h-out">
-    <h2 id="h-out"><span aria-hidden="true">3. </span><span id="outTitle">Your audio</span></h2>
-    <div class="summary" id="summary" aria-live="polite"></div>
-    <div class="note" id="levelNote"></div>
-    <div class="warnbox" id="uncertain" hidden></div>
-    <audio id="player" controls preload="metadata"></audio>
-    <div class="btnrow">
-      <button type="button" id="sendBtn">Send to Rolling Reader</button>
-      
-      
-    </div>
-    <p class="sendstatus" id="sendStatus" role="status" aria-live="polite" hidden></p>
-  </div>
+        <h2 class="kjb-h3">2. Send</h2>
+        <div class="btnrow"><button type="button" id="sendBtn" disabled>Send to VideoBot</button></div>
+        <p class="sendstatus" id="sendStatus" role="status" aria-live="polite" hidden></p>
+        <div class="err" id="err" hidden role="alert"></div>
       </div>
     </section>
   </div>
@@ -1671,13 +1650,8 @@ html {
         <label class="check"><input type="checkbox" id="ptNums" checked> Show verse numbers</label>
         <span class="ptsize"><button type="button" class="ghost" id="ptSmaller" aria-label="Smaller text">A&minus;</button><button type="button" class="ghost" id="ptBigger" aria-label="Bigger text">A+</button></span>
       </div></div></details>
-    <details class="kjb-sec"><summary><span class="t">Clean version<span class="hint">Break between verses, volume</span></span></summary>
-      <div class="in"><label for="pause">Break between verses (seconds)</label>
-<input type="number" id="pause" class="numin" value="1" min="0.2" max="5" step="0.1" inputmode="decimal"><label class="check"><input type="checkbox" id="normVol" checked> Even out the volume</label></div></details>
-    <details class="kjb-sec"><summary><span class="t">Other ways to save<span class="hint">This device</span></span></summary>
-      <div class="in"><p class="note">After the clean version is made. Rolling Reader does not need these: Send passes the audio over directly.</p><div class="btnrow"><a class="btn" id="dl" download="reading.wav" href="#">Download WAV</a><button type="button" class="ghost" id="shareBtn" hidden>Save or share</button></div></div></details>
     <details class="kjb-sec"><summary>About recording on iPad</summary>
-      <div class="in"><p>Allow the microphone when Safari asks. Keep the screen on while you record.</p><p>The microphone turns off when you leave this tab. Other tabs cannot be opened while a recording or a clean version is being made.</p></div></details>
+      <div class="in"><p>Allow the microphone when Safari asks. Keep the screen on while you record.</p><p>The microphone turns off when you leave this tab. Other tabs cannot be opened while a recording is being made or saved.</p></div></details>
   </div>
 </aside>
 
@@ -2334,19 +2308,9 @@ var TT = window.TT = { simpleClean: C.simpleClean, encodeWav: C.encodeWav,
   Bible: BIB, resolve: BIB.resolve, last: null, ready: false, passage: null };
 
 function fmt(sec) { sec = Math.max(0, Math.floor(sec)); return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0'); }
-function setStep(s) {
-  var lis = $('steps').children, seen = false;
-  for (var i = 0; i < lis.length; i++) { var d = lis[i].getAttribute('data-s'); lis[i].className = d === s ? 'cur' : (seen ? '' : 'done'); if (d === s) seen = true; }
-  if (!s) for (i = 0; i < lis.length; i++) lis[i].className = 'done';
-}
-function setProg(frac, text) {
-  var p = Math.max(0, Math.min(100, Math.round(frac * 100)));
-  $('bar').style.width = p + '%'; $('barWrap').setAttribute('aria-valuenow', p);
-  $('stage').textContent = text + (frac != null ? '  ' + p + '%' : '');
-}
 function showErr(msg) { $('err').textContent = msg; $('err').hidden = !msg; }
 function canGo() { return !!inputBlob && !!passage && !busy && $('passage').value.trim() === passageRaw; }
-function updGo() { $('goBtn').disabled = !canGo(); if (TT.onStage) TT.onStage(); }
+function updGo() { $('sendBtn').disabled = !canGo(); if (TT.onStage) TT.onStage(); }
 function refName() { return passage ? passage.short : 'the passage'; }
 function updTitle() {
   $('rtRef').textContent = passage ? passage.short : ($('passage').value.trim() || 'No passage set');
@@ -2366,7 +2330,7 @@ function updInWarn() {
 }
 function setInput(blob, name, label) {
   inputBlob = blob; inputName = name; inputDur = null; updGo();
-  $('inStatus').textContent = label; $('ttResult').hidden = true; showErr(''); updTitle(); updInWarn();
+  $('inStatus').textContent = label; sendSay(''); showErr(''); updTitle(); updInWarn();
   if (blob) {
     var a = new Audio(); var u = URL.createObjectURL(blob); a.preload = 'metadata';
     a.onloadedmetadata = function () { if (isFinite(a.duration) && inputBlob === blob) { inputDur = a.duration; $('inStatus').textContent = label + ' (' + fmt(a.duration) + ')'; updTitle(); updInWarn(); } URL.revokeObjectURL(u); };
@@ -2375,27 +2339,15 @@ function setInput(blob, name, label) {
   }
 }
 
-// ---- handoff: "Send to Rolling Reader" opens the Reader in a new tab and passes the WAV over with postMessage ----
-// The Reader (opened with ?from=tidier) posts {type:'rr-ready'} to us; we answer with the WAV bytes (transferred, not copied).
-// Origins are checked strictly both ways. If anything fails, the Download button is still there.
-var READER_ORIGIN = 'https://93fyr0c.sharehtml.org', READER_URL = READER_ORIGIN + '/?from=tidier';
-var lastSend = null, send = null;
+// ---- m4.0 Send (whole passage): the raw reading as a WAV into Drive 00 Inbox (same Drive queue and overwrite as verse by verse),
+// then, once Drive confirms it, a request note next to it for VideoBot. VideoBot does the cleaning. Nothing calls VideoBot directly.
 function sendSay(t, bad) { var el = $('sendStatus'); el.textContent = t; el.classList.toggle('bad', !!bad); el.hidden = !t; }
-function sendReset() { if (send) { clearTimeout(send.timer); send = null; } sendSay(''); }
-function sendFail(s, t) { if (send !== s) return; clearTimeout(s.timer); send = null; sendSay(t + ' You can still tap Download WAV and choose the file in Rolling Reader.', true); }
-$('sendBtn').addEventListener('click', function () {
-  if (!outBlob || !lastSend) return;
-  if (send) clearTimeout(send.timer);
-  var s = send = { info: lastSend, blob: outBlob, sent: false, timer: 0 };
-  sendSay('Sending the audio to Rolling Reader\u2026');
-  // one page: the WAV goes straight to the Rolling Reader tab in memory (no new window, no pop-up)
-  KJB.sendNarration({ name: s.info.name, passage: s.info.passage, text: s.info.text, footer: s.info.footer || '', covered: s.info.covered || '', title: s.info.title || '', words: s.info.words || [], blob: s.blob }).then(function (d) {
-    if (send !== s) return;
-    send = null;
-    if (d && d.ok) { TT.sentBlob = s.blob; TT.sentFor = s.info.passage; sendSay('Sent. Rolling Reader has ' + s.info.name + ' (' + fmt(+d.duration || 0) + ')' + (d.filled ? ' and the passage text with its title as a footer' : '') + '.', false); if (TT.onStage) TT.onStage(); KJB.show('reader'); }
-    else { send = s; sendFail(s, 'Rolling Reader could not use the audio: ' + String(d && d.error || 'unknown problem')); }
-  }, function (err) { if (send === s) { send = s; sendFail(s, 'The audio could not be sent (' + (err && err.message || err) + ').'); } });
-});
+function sendReset() { sendSay(''); }
+function passageNames(P) { // 'Genesis 1.1-31', 'Genesis 1.3', 'Genesis 1.29-2.3' (never a colon)
+  var b = P.name === 'Psalms' ? 'Psalm' : P.name, s = P.start, e = P.end;
+  var base = s.c === e.c ? b + ' ' + s.c + '.' + s.v + (s.v === e.v ? '' : '-' + e.v) : b + ' ' + s.c + '.' + s.v + '-' + e.c + '.' + e.v;
+  return { book: b, base: base, wav: base + '.wav', req: base + '.stitch-request' };
+}
 
 // ---- passage text box (for reading aloud; display only, not used for matching or audio) ----
 var PT_SIZES = [0.95, 1.05, 1.15, 1.25, 1.4, 1.55, 1.75, 2, 2.3], ptSize = 3, ptNums = true;
@@ -2448,7 +2400,7 @@ function applyPassage() {
   var raw = $('passage').value.trim();
   if (!BIB.isLoaded()) { setPassageStatus('Still loading the Bible text. Please wait a moment.', true); return false; }
   if (!raw) {
-    passageRaw = ''; if (passage) $('ttResult').hidden = true; passage = null; TT.passage = null; $('passWarn').hidden = true;
+    passageRaw = ''; if (passage) sendSay(''); passage = null; TT.passage = null; $('passWarn').hidden = true;
     setPassageStatus(NO_PASSAGE, false); 
     updPassageText(); updTitle(); updGo(); return false;
   }
@@ -2468,7 +2420,7 @@ function applyPassage() {
     else $('passWarn').hidden = true;
     $('needPass').hidden = true;
   }
-  if (changed) $('ttResult').hidden = true;
+  if (changed) sendSay('');
   updPassageText(); updTitle(); updGo();
   if (p.ok && TT.syncPicker) TT.syncPicker(p);
   return p.ok;
@@ -2636,15 +2588,8 @@ function discardTake() {
   if (recStream) { try { recStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {} recStream = null; }
   recBtnIdle();
   inputBlob = null; inputName = ''; inputDur = null;
-  sendReset(); lastSend = null;
-  var pl = $('player'); try { pl.pause(); } catch (e) {} pl.removeAttribute('src'); try { pl.load(); } catch (e) {}
-  if (outUrl) URL.revokeObjectURL(outUrl);
-  outUrl = null; outBlob = null; TT.last = null;
-  $('dl').setAttribute('href', '#'); $('dl').setAttribute('download', 'reading.wav');
-  $('shareBtn').hidden = true; $('shareBtn').onclick = null;
-  $('summary').textContent = ''; $('levelNote').textContent = ''; $('uncertain').textContent = ''; $('uncertain').hidden = true;
-  $('outTitle').textContent = 'Your audio'; $('ttResult').hidden = true;
-  $('prog').hidden = true; setProg(0, ''); $('stage').textContent = '';
+  sendReset();
+  outBlob = null; TT.last = null;
   $('inStatus').textContent = ''; $('inWarn').hidden = true; showErr('');
   updTitle(); updGo();
 }
@@ -2676,107 +2621,48 @@ function decode(ctx, ab) {
   });
 }
 var wakeLock = null;
-function breakSeconds() { var v = parseFloat($('pause').value); if (!isFinite(v)) v = 1; v = Math.max(0.2, Math.min(5, v)); return Math.round(v * 10) / 10; }
-try { var _b = parseFloat(localStorage.getItem('tt.breakSec.v2')); if (_b >= 0.2 && _b <= 5) $('pause').value = String(_b); } catch (e) {}
-$('pause').addEventListener('change', function () { var v = breakSeconds(); this.value = String(v); try { localStorage.setItem('tt.breakSec.v2', String(v)); } catch (e) {} });
-async function process() {
+async function sendPassage() {
   if (!canGo()) return;
   if (window.KJB && !KJB.allow('processing', 'recorder')) return;
-  var P = passage;
-  busy = true; $('goBtn').disabled = true; $('recBtn').disabled = true; $('reRecBtn').disabled = true; $('passage').disabled = true; TT.setPickersDisabled(true); showErr(''); $('ttResult').hidden = true;
-  $('prog').hidden = false; if (window.KJB) KJB.busyChanged();
-  var tm = { t0: performance.now() };
+  if (!window.VBV || !VBV.savePassage) { sendSay('Saving to Drive is not available on this page.', true); return; }
+  if (!VBV.driveReady()) { sendSay('Not signed in to Google Drive. Tap the Drive sign-in marker at the top, then tap Send again.', true); return; }
+  var P = passage, N = passageNames(P), blob = inputBlob;
+  busy = true; $('sendBtn').disabled = true; $('recBtn').disabled = true; $('reRecBtn').disabled = true; $('passage').disabled = true; TT.setPickersDisabled(true); showErr('');
+  if (window.KJB) KJB.busyChanged();
+  sendSay('Saving\u2026');
   try { if (navigator.wakeLock) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
   var ctx = null;
   try {
-    setStep('decode'); setProg(0, 'Reading the audio');
     var AC = window.AudioContext || window.webkitAudioContext;
-    var ab = await inputBlob.arrayBuffer(), want = sniffRate(ab);
+    var ab = await blob.arrayBuffer(), want = sniffRate(ab), buf;
     try { ctx = want ? new AC({ sampleRate: want }) : new AC(); } catch (e) { ctx = new AC(); }
-    var buf;
     try { buf = await decode(ctx, ab); }
-    catch (e1) {
-      // iPad Safari can refuse to decode at a forced sample rate: try once more at the device's own rate
-      try { if (ctx && ctx.close) ctx.close(); } catch (e) {}
-      ctx = new AC();
-      try { ab = await inputBlob.arrayBuffer(); buf = await decode(ctx, ab); } // fresh bytes: the first decode may have detached them
-      catch (e2) {
-        var why = ((e2 && (e2.name || e2.message)) || 'unknown') + ', ' + (inputBlob.type || 'no type') + ', ' + Math.round(inputBlob.size / 1024) + ' KB';
-        TT.lastError = 'decode: ' + why + (TT.lastTake ? ' ' + JSON.stringify(TT.lastTake) : '');
-        throw new Error('Recording failed: this recording could not be read on this device (' + why + '). Please record it again.');
-      }
-    }
+    catch (e1) { try { if (ctx && ctx.close) ctx.close(); } catch (e) {} ctx = new AC(); ab = await blob.arrayBuffer(); buf = await decode(ctx, ab); }
     ab = null;
-    var sr = buf.sampleRate, chans = [];
-    for (var c = 0; c < buf.numberOfChannels; c++) chans.push(buf.getChannelData(c));
-    var dur = buf.duration;
-    if (dur < 2) throw new Error('The recording is too short.');
-    tm.decode = performance.now();
-
-    setStep('clean'); setProg(0.4, 'Trimming the ends and evening the verse breaks');
-    await new Promise(function (r) { setTimeout(r, 0); });
-    var brk = breakSeconds();
-    var out = C.simpleClean(chans, sr, { verses: P.verses.map(function (v) { return v.text; }), breakSec: brk, lead: 1, tail: 0.5, minGap: 0.5 });
-    var rep = out.report;
-    chans = null; buf = null;
-    tm.clean = performance.now();
-
-    var lv = null;
-    if ($('normVol').checked) { setProg(0.7, 'Setting the volume'); lv = C.normalize(out.channels, out.sampleRate); }
-    else lv = { skipped: true, measured: C.measureLevel(out.channels, out.sampleRate) };
-    $('levelNote').textContent = C.levelText(lv);
-
-    setStep('encode'); setProg(0.85, 'Making the WAV file');
-    var wav = C.encodeWav(out.channels, out.sampleRate);
-    var outDur = out.length / out.sampleRate; out = null;
-    var outWords = [];
-    try { outWords = C.estimateWords(P.verses.map(function (v) { return v.text; }), rep.spans, outDur, rep.speech); } catch (e) { console.warn(e); outWords = []; }
-    tm.encode = performance.now();
-    if (outUrl) URL.revokeObjectURL(outUrl);
-    outBlob = new Blob([wav], { type: 'audio/wav' }); wav = null;
-    outUrl = URL.createObjectURL(outBlob);
-    setStep(null); setProg(1, 'Done');
-
-    function secs(x) { return x < 10 ? (Math.round(x * 10) / 10) + ' s' : Math.round(x) + ' s'; }
-    var parts = [];
-    parts.push(rep.leadTrimmed >= 0.05 ? 'Trimmed ' + secs(rep.leadTrimmed) + ' of silence at the start' : 'Nothing to trim at the start');
-    parts.push(rep.tailTrimmed >= 0.05 ? secs(rep.tailTrimmed) + ' at the end' : 'nothing at the end');
-    var sum = parts.join(', ') + '. ';
-    if (rep.breaksWanted) sum += 'Set ' + rep.breaksMade + ' of ' + rep.breaksWanted + ' verse break' + (rep.breaksWanted > 1 ? 's' : '') + ' to ' + brk + ' s. ';
-    sum += 'Other pauses left as you recorded them. Final length ' + fmt(outDur) + '.';
-    $('summary').textContent = sum;
-    if (rep.missing > 0) {
-      $('uncertain').textContent = 'Note: ' + rep.missing + ' verse break' + (rep.missing > 1 ? 's were' : ' was') + ' left as recorded, because no silence of at least half a second was found near ' + (rep.missing > 1 ? 'them' : 'it') + '.';
-      $('uncertain').hidden = false;
-    } else $('uncertain').hidden = true;
-    $('player').src = outUrl;
-    $('dl').href = outUrl;
-    var outName = (P.slug || 'reading') + '.wav';
-    $('outTitle').textContent = P.short;
-    $('dl').setAttribute('download', outName);
-    var file = null;
-    try { file = new File([outBlob], outName, { type: 'audio/wav' }); } catch (e) {}
-    $('shareBtn').hidden = !(file && navigator.canShare && navigator.canShare({ files: [file] }));
-    $('shareBtn').onclick = function () { navigator.share({ files: [file], title: P.short }).catch(function () {}); };
-    lastSend = { name: outName, passage: P.short, text: P.verses.map(function (v) { return v.text; }).join('\n'), footer: P.footer, covered: P.covered, title: P.short, words: outWords };
-    sendReset();
-    $('ttResult').hidden = false;
-    TT.last = { passage: P.long, fileName: outName, report: rep, inputDuration: dur, outputDuration: outDur, sampleRate: sr, level: lv, spans: rep.spans, words: outWords, timings: {
-      decode: tm.decode - tm.t0, clean: tm.clean - tm.decode, encode: tm.encode - tm.clean, total: tm.encode - tm.t0 } };
-    $('ttResult').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    var n = buf.length, nc = buf.numberOfChannels, mono = new Float32Array(n); // one channel, 16-bit, like the verse WAVs
+    for (var c = 0; c < nc; c++) { var d = buf.getChannelData(c); for (var i = 0; i < n; i++) mono[i] += d[i] / nc; }
+    var wav = C.encodeWav([mono], buf.sampleRate); mono = null; buf = null;
+    await VBV.savePassage(N.wav, wav);
+    await VBV.saveStitchRequest({ name: N.req, book: N.book, chapter: P.start.c === P.end.c ? P.start.c : null, verses: P.count,
+      extra: { mode: 'passage', file: N.wav, from: { c: P.start.c, v: P.start.v }, to: { c: P.end.c, v: P.end.v } } });
+    if (inputBlob === blob) { outBlob = blob; TT.sentBlob = blob; TT.sentFor = P.short; }
+    sendSay('Saved to Drive. VideoBot will pick it up at its 21:00 check, or ask it now.');
   } catch (e) {
     console.warn(e);
-    var msg = (e && e.message) || String(e);
-    if (/memory|allocation|RangeError/i.test(msg)) msg = 'This device ran out of memory. Try a shorter recording. (' + msg + ')';
-    showErr(msg); TT.lastError = msg;
+    var k = e && e.kind, msg = (e && e.message) || String(e);
+    if (k === 'signin' || k === 'auth' || k === 'folder') msg = 'Not signed in to Google Drive. Tap the Drive sign-in marker at the top, then tap Send again.';
+    else if (k === 'offline') msg = 'No connection to Google Drive. Check the internet, then tap Send again.';
+    else if (/memory|allocation|RangeError/i.test(msg)) msg = 'This device ran out of memory. Try a shorter recording.';
+    else if (/decode|EncodingError|could not/i.test(msg) && !k) msg = 'This recording could not be read on this device. Please record it again.';
+    else msg = 'Not saved: ' + msg + '. Tap Send again.';
+    sendSay(msg, true); TT.lastError = msg;
   } finally {
     busy = false; if (window.KJB) setTimeout(KJB.busyChanged, 0); $('recBtn').disabled = false; $('reRecBtn').disabled = false; $('passage').disabled = false; TT.setPickersDisabled(false); updGo();
     try { if (wakeLock) { wakeLock.release(); wakeLock = null; } } catch (e) {}
     try { if (ctx && ctx.close) ctx.close(); } catch (e) {}
   }
 }
-$('goBtn').addEventListener('click', process);
-TT.process = process;
+$('sendBtn').addEventListener('click', sendPassage);
 TT.useRecording = function (blob, name) { setInput(blob, name || 'recording.wav', 'Ready: your recording'); };
 /* ===== one page: hooks for the shell (inside the Recorder's own script) ===== */
 TT.busyKind = function () { if (recStarting || (rec && rec.state === 'recording')) return 'recording'; if (busy) return 'processing'; return ''; };
@@ -2789,17 +2675,16 @@ TT.pause = function () {
   if (recStarting) { recGen++; recStarting = false; }
   if (rec && rec.state === 'recording') { try { rec.stop(); } catch (e) {} }
   if (recStream) { try { recStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {} }
-  try { $('player').pause(); } catch (e) {}
   recBtnIdle();
 };
-TT.stage = function () { var k = TT.busyKind(); if (k === 'recording') return 'recording'; if (k === 'processing') return 'processing'; if (outBlob) return TT.sentBlob === outBlob ? 'sent' : 'clean'; if (inputBlob) return 'recorded'; return 'ready'; };
+TT.stage = function () { var k = TT.busyKind(); if (k === 'recording') return 'recording'; if (k === 'processing') return 'processing'; if (outBlob && TT.sentBlob === outBlob) return 'sent'; if (inputBlob) return 'recorded'; return 'ready'; };
 var ttWant = null; // a passage sent from the Tracker while this tab has a take that is not sent yet
 function ttHandoffShow() {
   var box = $('ttHandoff'); if (!box) return;
   if (!ttWant) { box.hidden = true; return; }
   var k = TT.busyKind();
   box.hidden = false;
-  $('ttHandoffText').textContent = k === 'recording' ? 'Finish this recording first. ' + ttWant + ' is waiting.' : k === 'processing' ? 'The clean version is being made. ' + ttWant + ' is waiting.' :
+  $('ttHandoffText').textContent = k === 'recording' ? 'Finish this recording first. ' + ttWant + ' is waiting.' : k === 'processing' ? 'The reading is being saved. ' + ttWant + ' is waiting.' :
     'You picked ' + ttWant + ' in the Tracker, but the take for ' + refName() + ' is not sent yet.';
   $('ttHandoffKeep').hidden = !!k; $('ttHandoffSwitch').hidden = !!k;
   $('ttHandoffSwitch').textContent = 'Switch to ' + ttWant + ' (drops this take)';
@@ -5685,7 +5570,7 @@ window.RR = { get defaults() { return defaults.info; }, get drawT() { return pv.
     var mine = KJB.busyKind().filter(function (b) { return b.tab !== tab; }), far = KJB.otherBusy();
     var clash = function (k) { return kind === 'rendering' ? (k === 'recording' || k === 'processing') : k === 'rendering'; };
     for (var i = 0; i < mine.length; i++) if (clash(mine[i].kind)) {
-      KJB.guardSay(kind === 'rendering' ? 'The Recorder is busy (' + (mine[i].kind === 'recording' ? 'recording' : 'making the clean version') + '). Finish that first, then make the video.' : 'Rolling Reader is making a video. Wait for it to finish (or tap Cancel there) before recording.');
+      KJB.guardSay(kind === 'rendering' ? 'The Recorder is busy (' + (mine[i].kind === 'recording' ? 'recording' : 'saving the reading') + '). Finish that first, then make the video.' : 'Rolling Reader is making a video. Wait for it to finish (or tap Cancel there) before recording.');
       return false;
     }
     for (var j = 0; j < far.length; j++) if (clash(far[j])) {
@@ -9646,8 +9531,12 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
     }).catch(function () { emit(); });
 
     function isStitch(t) { return t.kind === 'stitch'; }
+    function isSide(t) { return t.kind === 'stitch' || t.kind === 'passage'; } // m4.0: not a verse
+    var waiters = new Map(); // m4.0: id -> {res, rej}; settled when Drive confirms (or gives up)
+    function settle(id, e, r) { var w = waiters.get(id); if (!w) return; waiters.delete(id); if (e) w.rej(e); else w.res(r); }
+    function waitFor(p) { return p.then(function (q) { return new Promise(function (res, rej) { waiters.set(q.id, { res: function (r) { res(Object.assign({}, q, r)); }, rej: rej }); }); }); }
     function pub(t) { return { id: t.id, file: t.file, state: t.state, tries: t.tries, error: t.error || null, at: t.at, drive_id: t.drive_id || null, sha256: t.sha256, why: t.why || null }; }
-    function queue() { return Array.from(items.values()).filter(function (t) { return !isStitch(t); }).map(pub); }
+    function queue() { return Array.from(items.values()).filter(function (t) { return !isSide(t); }).map(pub); }
     function stitchQueue() { return Array.from(items.values()).filter(isStitch).map(pub); }
     function emit() { var q = queue(); listeners.slice().forEach(function (f) { try { f(q); } catch (e) {} }); }
     function persist(t) { return put('takes', t).catch(function () {}); }
@@ -9672,13 +9561,22 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
     function saveStitchRequest(spec) {
       spec = spec || {};
       var book = spec.book, chapter = spec.chapter == null ? null : spec.chapter;
-      var file = chapter == null ? book + '.stitch-request' : book + ' ' + chapter + '.stitch-request';
-      var body = JSON.stringify({ book: book, chapter: chapter, requestedAt: spec.requestedAt || new Date().toISOString(), verses: spec.verses | 0 });
+      var file = spec.name || (chapter == null ? book + '.stitch-request' : book + ' ' + chapter + '.stitch-request');
+      var body = JSON.stringify(Object.assign({ book: book, chapter: chapter, requestedAt: spec.requestedAt || new Date().toISOString(), verses: spec.verses | 0 }, spec.extra || {}));
       var u8 = new TextEncoder().encode(body), ab = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
       var id = 'stitch:' + file;
       return sha256(ab).then(function (sum) {
         var prev = items.get(id);
         return enqueue({ id: id, kind: 'stitch', file: file, mime: 'text/plain', wav: ab, sha256: sum, meta: {}, gate: null,
+          state: 'saving', tries: 0, nextAt: 0, at: new Date().toISOString(), seq: Math.max((prev && prev.seq) || 0, (files.get(id) || {}).rev || 0) + 1, drive_id: (files.get(id) || {}).fileId || null });
+      });
+    }
+    // m4.0: whole-passage WAV ('Genesis 1.1-31.wav') into 00 Inbox; same queue, lookup-by-name overwrite and retry as a verse WAV
+    function savePassage(file, wav) {
+      var ab = wav instanceof ArrayBuffer ? wav : wav.buffer.slice(wav.byteOffset, wav.byteOffset + wav.byteLength), id = 'passage:' + file;
+      return sha256(ab).then(function (sum) {
+        var prev = items.get(id);
+        return enqueue({ id: id, kind: 'passage', file: file, mime: 'audio/wav', wav: ab, sha256: sum, meta: {}, gate: null,
           state: 'saving', tries: 0, nextAt: 0, at: new Date().toISOString(), seq: Math.max((prev && prev.seq) || 0, (files.get(id) || {}).rev || 0) + 1, drive_id: (files.get(id) || {}).fileId || null });
       });
     }
@@ -9695,7 +9593,8 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
         t.drive_id = r.fileId; files.set(t.id, { id: t.id, fileId: r.fileId, sha256: r.sha256, at: t.at, rev: t.seq, file: t.file });
         put('files', files.get(t.id)).catch(function () {});
         delete t.wav; t.state = 'saved'; t.error = null; t.why = null; del('takes', t.id).catch(function () {}); emit();
-        if (!isStitch(t)) {
+        settle(t.id, null, { fileId: r.fileId, replaced: r.replaced });
+        if (!isSide(t)) {
           var m = t.meta || {};
           var h = { id: t.id, ref: refOf(t.id), file: t.file, drive_id: r.fileId, sha256: t.sha256, bytes: r.bytes, duration_s: m.duration_s, speech_start_s: m.speech_start_s, speech_end_s: m.speech_end_s, gate: t.gate, take_at: m.take_at, retake: !!m.retake, resampled: !!m.resampled, replaced: r.replaced };
           savedCbs.slice().forEach(function (f) { try { f(h); } catch (e) {} });
@@ -9707,13 +9606,13 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
         if (e.kind === 'auth' || e.kind === 'signin' || e.kind === 'folder') {
           if (e.kind === 'auth') badToken = e.token || badToken;
           // every waiting take needs the same sign-in
-          items.forEach(function (x) { if (x.state === 'saving' || x === t) set(x, 'needs-signin', e.message, e.kind === 'folder' ? 'folder' : 'signin'); });
+          items.forEach(function (x) { if (x.state === 'saving' || x === t) { set(x, 'needs-signin', e.message, e.kind === 'folder' ? 'folder' : 'signin'); settle(x.id, e); } });
           return;
         }
         t.tries++;
         var auto = e.kind !== 'final' && e.kind !== 'refused' && t.tries < maxTries;
         set(t, 'failed', e.message, e.kind);
-        if (auto) { t.retryAt = Date.now() + baseMs * Math.pow(2, t.tries - 1); schedule(); }
+        if (auto) { t.retryAt = Date.now() + baseMs * Math.pow(2, t.tries - 1); schedule(); } else settle(t.id, e);
         kick();
       });
     }
@@ -9792,7 +9691,7 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
       var tok = token();
       if (!tok) return Promise.reject(err('signin', 'Google sign-in has run out'));
       if (!inboxGranted()) return Promise.reject(err('folder', 'Choose the 00 Inbox folder once'));
-      var meta = isStitch(t) ? {} : props(t);
+      var meta = isSide(t) ? {} : props(t);
       var mime = t.mime || 'audio/wav';
       function wrap(e) { if (e && e.kind === 'auth') e.token = tok; throw e; }
       function patch(fileId) {
@@ -9825,7 +9724,9 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
       kind: 'drive', ready: ready,
       saveVerse: saveVerse,
       saveStitchRequest: saveStitchRequest,
-      pending: function () { var n = 0; items.forEach(function (t) { if (!isStitch(t) && t.state !== 'saved') n++; }); return n; },
+      savePassage: function (file, wav) { return waitFor(savePassage(file, wav)); },
+      saveStitchRequestConfirmed: function (spec) { return waitFor(saveStitchRequest(spec)); },
+      pending: function () { var n = 0; items.forEach(function (t) { if (!isSide(t) && t.state !== 'saved') n++; }); return n; },
       stitchQueue: stitchQueue,
       queue: queue,
       onQueueChange: function (f) { listeners.push(f); return function () { listeners = listeners.filter(function (x) { return x !== f; }); }; },
@@ -10007,6 +9908,7 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
     fileIdOf: function (id) { return inner.fileIdOf ? inner.fileIdOf(id) : (inner.fileIds && inner.fileIds.get(id)) || null; },
     needsSignIn: function () { return inner.needsSignIn ? inner.needsSignIn() : false; },
     saveStitchRequest: function (spec) { return inner.saveStitchRequest ? inner.saveStitchRequest(spec) : Promise.reject(new Error('Stitch request needs Google Drive')); },
+    savePassage: function (file, wav) { return inner.savePassage ? inner.savePassage(file, wav) : Promise.reject(new Error('Saving needs Google Drive')); },
     stitchQueue: function () { return inner.stitchQueue ? inner.stitchQueue() : []; },
     stop: function () {} // a unit switch or tab change never stops the upload queue
   };
@@ -10242,6 +10144,9 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
       var cb = setBox.querySelector('.vbvr-drive-connect'); cb.textContent = tok && granted ? 'Connect again' : 'Connect Google Drive'; cb.disabled = connecting; }
   }
   VBV.driveBanner = function () { driveBanner(); };
+  VBV.driveReady = function () { return driveOn() && tokenOk() && VBVDrive.inboxGranted(); }; // m4.0 whole-passage Send
+  VBV.savePassage = function (file, wav) { return storage.savePassage(file, wav); };
+  VBV.saveStitchRequest = function (spec) { return inner.saveStitchRequestConfirmed ? inner.saveStitchRequestConfirmed(spec) : storage.saveStitchRequest(spec); };
   if (KJB.on) { KJB.on('google-token', function () { driveBanner(); }); KJB.on('tab', function (t) { if (t === 'recorder') driveBanner(); }); }
   setInterval(function () { if (!connecting) driveBanner(); }, 30000);
   if (window.VBVDrive && KJB.google) { var pre = function () { KJB.google.loadGis().catch(function () {}); KJB.google.loadGapi().catch(function () {}); }; if (KJB.on) KJB.on('tab', function (t) { if (t === 'recorder') pre(); }); }
