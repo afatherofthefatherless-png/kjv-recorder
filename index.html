@@ -1360,11 +1360,18 @@ html {
 
 .vbv-gate-row {
   display: grid;
-  grid-template-columns: calc(100 * var(--scale) * 1px) auto 1fr;
-  column-gap: calc(16 * var(--scale) * 1px);
-  align-items: baseline;
+  grid-template-columns: max(72px, calc(140 * var(--scale) * 1px)) auto 1fr;
+  column-gap: max(12px, calc(16 * var(--scale) * 1px));
+  align-items: start;
   min-height: calc(38 * var(--scale) * 1px);
-  font-size: var(--fs-28);
+  font-size: max(22px, var(--fs-28));
+}
+.vbv-gate-row[data-word-alert="1"] {
+  grid-template-columns: max(72px, calc(140 * var(--scale) * 1px)) auto;
+  row-gap: 0.35em;
+}
+.vbv-gate-row[data-word-alert="1"] .vbv-gate-reason {
+  grid-column: 1 / -1;
 }
 
 .vbv-gate-ref { font-weight: var(--font-weight-bold); color: var(--color-fg); }
@@ -1396,12 +1403,52 @@ html {
 .vbv-pending-item { overflow: visible; }
 .vbv-pending-strip { width: 100%; max-width: calc(720 * var(--scale) * 1px); }
 
-.vbv-warn-copy {
+.vbv-wordcheck-time {
+  margin: 0.35em 0 0.6em;
+  font-size: max(18px, var(--fs-28, 18px));
+  font-weight: 700;
+  color: #ffffff;
+}
+.vbv-word-alert {
   margin: 0 0 calc(16 * var(--scale) * 1px);
-  font-size: var(--fs-28);
-  font-weight: var(--font-weight-bold);
+  padding: calc(16 * var(--scale) * 1px) calc(18 * var(--scale) * 1px);
+  border: 3px solid var(--color-fg);
+  background: var(--color-bg);
   color: var(--color-fg);
-  line-height: 1.35;
+  font-family: var(--font-ui);
+  font-size: max(24px, var(--fs-32));
+  font-weight: var(--font-weight-bold);
+  line-height: 1.45;
+}
+.vbv-word-alert p { margin: 0 0 0.35em; }
+.vbv-word-alert p:last-child { margin-bottom: 0; }
+.vbv-warn-copy,
+.vbv-message-note,
+.vbv-note-list {
+  margin: 0 0 calc(12 * var(--scale) * 1px);
+  font-family: var(--font-ui);
+  font-size: max(22px, var(--fs-28));
+  font-weight: var(--font-weight-regular);
+  color: var(--color-muted);
+  line-height: 1.55;
+}
+.vbv-note-list {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35em;
+}
+.vbv-note-list li { margin: 0; }
+.vbv-gate-reason { color: var(--color-muted); }
+.vbv-gate-reason .vbv-word-alert {
+  margin: 0 0 0.4em;
+}
+.vbv-gate-reason .vbv-note-list { margin: 0; }
+.vbv-gate-row { align-items: start; }
+.vbv-gate-mark[data-result="WARN"] {
+  font-weight: var(--font-weight-regular);
+  color: var(--color-muted);
 }
 
 .vbv-stitch-actions {
@@ -6893,9 +6940,9 @@ var VBVRec = (() => {
       fadeInMs: 10,
       fadeOutMs: 30,
       padS: 0.5,
-      leadInPass: Object.freeze([0.15, 0.4]),
-      leadInWarnMax: 0.7,
-      leadInFailMin: 0.08
+      leadInPass: Object.freeze([0.02, 2.5]),
+      leadInWarnMax: 5,
+      leadInFailMin: 0
     }),
     tight: Object.freeze({
       preRollMs: 150,
@@ -6903,9 +6950,9 @@ var VBVRec = (() => {
       fadeInMs: 10,
       fadeOutMs: 30,
       padS: 0.4,
-      leadInPass: Object.freeze([0.08, 0.4]),
-      leadInWarnMax: 0.8,
-      leadInFailMin: 0.05
+      leadInPass: Object.freeze([0.02, 2.0]),
+      leadInWarnMax: 4,
+      leadInFailMin: 0
     }),
     usual: Object.freeze({
       preRollMs: 1e3,
@@ -6913,9 +6960,9 @@ var VBVRec = (() => {
       fadeInMs: 10,
       fadeOutMs: 30,
       padS: 1.5,
-      leadInPass: Object.freeze([0.7, 1.2]),
-      leadInWarnMax: 1.6,
-      leadInFailMin: 0.4
+      leadInPass: Object.freeze([0.08, 3.5]),
+      leadInWarnMax: 6,
+      leadInFailMin: 0
     })
   });
   var DEFAULT_TRIM_PRESET = "half";
@@ -6957,19 +7004,19 @@ var VBVRec = (() => {
   var LOUDNESS = Object.freeze({ targetLufs: -16, ceilingDbfs: -1.5 });
   var GATE_SHARED = Object.freeze({
     wordsPerSecond: 2.5,
-    durationPass: Object.freeze([0.65, 1.6]),
-    durationWarn: Object.freeze([0.5, 2.5]),
+    durationPass: Object.freeze([0.45, 2.2]),
+    durationWarn: Object.freeze([0.3, 3]),
     clipLevel: 0.999,
     clipMaxRatio: 1e-4,
     clipMaxRun: 3,
-    floorPassMax: -55,
-    floorWarnMax: -40,
-    snrPassMin: 25,
-    snrWarnMin: 12,
-    silencePassMax: 2.5,
-    silenceWarnMax: 4,
-    lufsPassTol: 1,
-    lufsWarnTol: 8,
+    floorPassMax: -28,
+    floorWarnMax: -18,
+    snrPassMin: 6,
+    snrWarnMin: 3,
+    silencePassMax: 4.5,
+    silenceWarnMax: 7,
+    lufsPassTol: 10,
+    lufsWarnTol: 16,
     silentPeakDb: -45,
     spreadPassMax: 2,
     spreadWarnMax: 3
@@ -7110,6 +7157,22 @@ var VBVRec = (() => {
     const leadSamples = onsetSample - trimStart;
     const wantLead = Math.round(sr * C.preRollMs / 1e3);
     const padIn = Math.max(0, wantLead - leadSamples);
+    const onsetF = first.startF;
+    const onDbAt = onT(onsetF);
+    const onsetMarginDb = (Number.isFinite(db[onsetF]) && Number.isFinite(onDbAt)) ? db[onsetF] - onDbAt : null;
+    let riseFrom = onsetF;
+    for (let f = onsetF; f >= Math.max(0, onsetF - back); f--) {
+      if (db[f] >= floor[f] + C.backtrackDb) riseFrom = f;
+      else break;
+    }
+    const riseTarget = Math.max(onDbAt, floor[onsetF] + C.onAboveFloorDb);
+    let riseTo = onsetF;
+    const riseLim = Math.min(n, onsetF + Math.round(300 / C.hopMs));
+    for (let f = riseFrom; f < riseLim; f++) {
+      riseTo = f;
+      if (db[f] >= riseTarget) break;
+    }
+    const onsetRampMs = (riseTo - riseFrom) * C.hopMs;
     return {
       ...base,
       speech: true,
@@ -7124,8 +7187,10 @@ var VBVRec = (() => {
       speechDb,
       snrDb: speechDb - floor0,
       longestInternalSilenceS: longest / sr,
-      endedEarly: n - 1 - last.endF < silFrames
+      endedEarly: n - 1 - last.endF < silFrames,
       // fewer than 700 ms of silence after the last speech
+      onsetRampMs,
+      onsetMarginDb
     };
   }
   function trimTake(samples, sr, a, { fadeInMs = ONSET.fadeInMs, fadeOutMs = ONSET.fadeOutMs } = {}) {
@@ -7682,7 +7747,7 @@ var VBVRec = (() => {
       const st = ratio2 >= gate.durationPass[0] && ratio2 <= gate.durationPass[1] ? PASS : ratio2 >= gate.durationWarn[0] && ratio2 <= gate.durationWarn[1] ? WARN : FAIL;
       c.duration = { value: r3(ratio2), seconds: r3(dur), expected_s: r3(exp), status: st };
     } else c.duration = { value: null, seconds: r3(dur), status: SKIP, note: "no text loaded, word count unknown" };
-    const lead = a.onsetSample / sr;
+    const lead = meta && Number.isFinite(meta.leadS) ? meta.leadS : a.onsetSample / sr;
     c.lead_in = { value: r3(lead), status: lead >= gate.leadInPass[0] && lead <= gate.leadInPass[1] ? PASS : WARN }; // m3.6: never a FAIL (people start right after the tap)
     let clipped = 0, run = 0, maxRun = 0;
     for (const v of s) {
@@ -7699,7 +7764,7 @@ var VBVRec = (() => {
     const fl = meta && meta.floorDb != null && Number.isFinite(meta.floorDb) ? meta.floorDb : a.floorDb;
     const snr = meta && meta.snrDb != null && Number.isFinite(meta.snrDb) ? meta.snrDb : a.snrDb;
     const fst = fl <= gate.floorPassMax ? PASS : WARN; // m3.6: at most WARN
-    const sst = snr >= gate.snrPassMin ? PASS : snr >= gate.snrWarnMin ? WARN : FAIL;
+    const sst = snr >= gate.snrPassMin ? PASS : WARN; // volume note only: never a FAIL
     c.noise_floor = { value: r3(fl), status: fst };
     c.snr = { value: r3(snr), status: sst };
     const sil = a.longestInternalSilenceS;
@@ -8022,8 +8087,102 @@ var VBVRec = (() => {
     const w = failWords(checks, gate), t = w.length ? w.join(", ") : "a check failed";
     return "This take was not saved: " + t.charAt(0).toUpperCase() + t.slice(1) + ". Tap Record and read the verse again.";
   }
+  function warnWordsSoft(checks) {
+    const c = checks || {}, w = (k) => c[k] && c[k].status === "WARN", out = [];
+    if (w("lead_in")) out.push("the lead-in is a little long or short");
+    if (w("clipping")) out.push("the take clipped a little");
+    if (w("noise_floor")) out.push("the background is a little noisy");
+    if (w("snr")) out.push("the voice is a little quiet against the room");
+    if (w("loudness")) out.push("the volume is a little off");
+    if (w("duration")) out.push("the length is a little off for this verse");
+    if (w("internal_silence")) out.push("a pause is a little long");
+    return out;
+  }
+  function warnNote(checks) {
+    const w = warnWordsSoft(checks), t = w.length ? w.join(", ") : "a small check note";
+    return "Small note: " + t + ". You can save this take, or record it again.";
+  }
+  function wordCheckScriptUrl() {
+    const href = (location.pathname.endsWith("/") || /index\.html$/i.test(location.pathname)) ? location.href : location.href + "/";
+    return new URL("word-check.js", new URL(href, location.href)).href;
+  }
+  function warmupWordCheck() {
+    const go = (api) => {
+      if (!api) return;
+      globalThis.VBVWordCheck = api;
+      if (api.warmup) return api.warmup();
+      if (api.loadPipeline) return api.loadPipeline();
+    };
+    if (globalThis.VBVWordCheck) return Promise.resolve(go(globalThis.VBVWordCheck)).catch(function () {});
+    return import(wordCheckScriptUrl()).then((m) => go(m.default || m.VBVWordCheck || m)).catch(function () {});
+  }
+  function formatWordCheckTook(ms, runtime) {
+    const s = Math.max(0, Number(ms) / 1000);
+    const label = runtime && runtime.label ? " (" + runtime.label + ")" : "";
+    return "Word check took " + s.toFixed(1) + " s" + label;
+  }
+  function startWordCheck(rec, gen) {
+    return new Promise((resolve) => {
+      const done = (issues) => { resolve(Array.isArray(issues) ? issues : []); };
+      try {
+        const text = rec.textSource && rec.textSource.readingText ? rec.textSource.readingText(rec.verseId) : rec.readingText;
+        const wav = rec.take && rec.take.wav;
+        if (!text || !wav) { done([]); return; }
+        let cached = false;
+        try { cached = !!(globalThis.localStorage && localStorage.getItem("vbv.wordCheck.modelReady.v1")); } catch (e) {}
+        rec.wordCheckAgain = false;
+        rec.wordCheckTook = "";
+        rec.wordCheckIssues = [];
+        rec.wordCheckMessage = cached ? "Checking words…" : "Checking words… getting ready (a one-time download)…";
+        const _wcT0 = Date.now();
+        const checkingText = () => rec.wordCheckAgain ? "Checking again…" : (cached ? "Checking words…" : "Checking words… getting ready (a one-time download)…");
+        const _wcTick = setInterval(function () {
+          if (gen !== rec.gen) { clearInterval(_wcTick); return; }
+          if (rec.wordCheckTook) return;
+          const s = (Date.now() - _wcT0) / 1000;
+          rec.wordCheckMessage = checkingText() + " " + s.toFixed(1) + " s";
+          rec.emit();
+        }, 200);
+        rec.emit();
+        const applyIssues = (issues, note, unclear, runtime) => {
+          try { clearInterval(_wcTick); } catch (e) {}
+          if (gen !== rec.gen) { done([]); return; }
+          const lines = Array.isArray(issues) ? issues.slice() : [];
+          rec.wordCheckIssues = lines;
+          rec.wordCheckTook = formatWordCheckTook(Date.now() - _wcT0, runtime);
+          rec.wordCheckMessage = lines.length ? lines.join(" \u00b7 ") : (note || "");
+          if (rec.take) rec.take.wordCheckIssues = lines;
+          if (rec.takesById && rec.verseId && rec.takesById[rec.verseId]) rec.takesById[rec.verseId].wordCheckIssues = lines;
+          rec.emit();
+          done(lines);
+        };
+        const finish = (note) => applyIssues([], note);
+        const skip = () => applyIssues([], "");
+        const run = (api) => {
+          const onStatus = (s) => {
+            if (gen !== rec.gen) return;
+            if (s === "checking-again") {
+              rec.wordCheckAgain = true;
+              rec.wordCheckMessage = "Checking again…";
+              rec.emit();
+            }
+          };
+          const go = api.checkAudio
+            ? api.checkAudio(wav, text, { onStatus }).then((r) => applyIssues((r && r.issues) || [], r && r.note, r && r.unclearEnd, (r && r.runtime) || (api.getRuntime && api.getRuntime())))
+            : api.checkTake({ wav, text }).then(finish);
+          return go.catch(skip);
+        };
+        if (globalThis.VBVWordCheck && (VBVWordCheck.checkAudio || VBVWordCheck.checkTake)) run(VBVWordCheck);
+        else import(wordCheckScriptUrl()).then((m) => run(m.default || m.VBVWordCheck || m)).catch(skip);
+      } catch (e) {
+        try { clearInterval(_wcTick); } catch (x) {}
+        rec.wordCheckMessage = "";
+        done([]);
+      }
+    });
+  }
   var MIC_BLOCKED_MSG = "Recording failed: the microphone is blocked for this site. On iPad: tap \u201CaA\u201D in the Safari address bar, Website Settings, Microphone, Allow (or Settings \u203A Apps \u203A Safari \u203A Microphone). Then reload the page and tap Record again.";
-  function snipVerse(raw, sr, { calibration = null, dropTailMs, words = null, resampled = false, onset = ONSET, gate } = {}) {
+  function snipVerse(raw, sr, { calibration = null, dropTailMs, words = null, resampled = false, onset = ONSET, gate, verseText = "" } = {}) {
     const C = onset || ONSET;
     const G = gate || gateFor(C.preset || DEFAULT_TRIM_PRESET);
     const dropTail = dropTailMs ?? C.stopTapDropMs;
@@ -8042,13 +8201,22 @@ var VBVRec = (() => {
     const rawPkLin = peak(trimmed), rawPeakDb = rawPkLin > 0 ? 20 * Math.log10(rawPkLin) : -200;
     const norm2 = normalize(trimmed, sr);
     const wav = encodeWav(norm2.samples, sr);
-    const checks = checkVerse(decodeWav(wav), { words, meta: { rawClipRun, rawPeakDb, floorDb: a.floorDb, snrDb: a.snrDb }, gate: G });
+    const checks = checkVerse(decodeWav(wav), { words, meta: { rawClipRun, rawPeakDb, floorDb: a.floorDb, snrDb: a.snrDb, leadS: a.onsetSample / sr }, gate: G });
     const fa = checks._analysis;
     delete checks._analysis;
-    const hardFail = Object.values(checks).some((c) => c.status === "FAIL");
+    const softDet = (typeof detectSoftOnset === "function" ? detectSoftOnset : (globalThis.VBVCauses && VBVCauses.detectSoftOnset));
+    if (softDet) {
+      const soft = softDet({ verseText: verseText || "", onsetRampMs: a.onsetRampMs, onsetMarginDb: a.onsetMarginDb });
+      if (soft && soft.soft) {
+        checks.soft_onset = { status: "WARN", value: r3(a.onsetRampMs), note: (globalThis.VBVCauses && VBVCauses.CAUSE && VBVCauses.CAUSE.softOnset) || "The verse starts with a soft sound, so I couldn't find the exact start. It's probably fine, but have a listen." };
+      }
+    }
+    const hardFail = Object.values(checks).some((c) => c && c.status === "FAIL");
     const meta = {
       floorDb: a.floorDb,
       snrDb: a.snrDb,
+      onsetRampMs: a.onsetRampMs,
+      onsetMarginDb: a.onsetMarginDb,
       rawS: raw.length / sr,
       trimStartS: a.trimStart / sr,
       trimEndS: a.trimEnd / sr,
@@ -8119,6 +8287,7 @@ var VBVRec = (() => {
       this.chunks = [];
       this.collecting = false;
       this.message = "";
+      this.wordCheckMessage = ""; this.wordCheckIssues = [];
       this.startedAt = 0;
       this.lastSave = null;
       this.saveError = null;
@@ -8219,6 +8388,7 @@ var VBVRec = (() => {
       if (this.state === V.PROCESSING || this.state === V.SAVING) return;
       const g = ++this.gen;
       this.message = "";
+      this.wordCheckMessage = ""; this.wordCheckIssues = [];
       this.take = null;
       this.saveError = null;
       this.collecting = false;
@@ -8250,6 +8420,7 @@ var VBVRec = (() => {
     async stop() {
       if (this.state !== V.RECORDING) return;
       const g = this.gen;
+      try { warmupWordCheck(); } catch (e) {}
       this.mic && this.mic.flush && this.mic.flush();
       this.go("stop");
       if (this.flushWaitMs) await new Promise((r2) => setTimeout(r2, this.flushWaitMs));
@@ -8264,7 +8435,8 @@ var VBVRec = (() => {
       }
       if (g !== this.gen) return;
       const words = this.textSource && this.textSource.wordCount ? this.textSource.wordCount(this.verseId) : null;
-      const r = snipVerse(raw, sr, { words, resampled, onset: this.onset, gate: this.gate });
+      const verseText = this.textSource && this.textSource.readingText ? this.textSource.readingText(this.verseId) : this.readingText;
+      const r = snipVerse(raw, sr, { words, resampled, onset: this.onset, gate: this.gate, verseText });
       if (g !== this.gen) return;
       if (r.noSpeech) {
         this.message = "No speech heard. Tap Record and read the verse.";
@@ -8273,13 +8445,22 @@ var VBVRec = (() => {
       }
       this.take = { verseId: this.verseId, createdAt: Date.now(), status: r.hardFail ? "failed" : "review", wav: r.wav, checks: r.checks, meta: r.meta, fileName: verseFileNameOfId(this.verseId) };
       if (r.hardFail) this.message = failMessage(r.checks, this.gate);
-      if (r.hardFail) try { localStorage.setItem("vbv.lastFail.v1", JSON.stringify({ at: (/* @__PURE__ */ new Date()).toISOString(), id: this.verseId, sr: this.mic && this.mic.sampleRate, checks: r.checks, meta: r.meta })); } catch (e) {}
-      if (!r.hardFail && this.autoSave) {
-        this.state = vTransition(this.state, "ready");
-        await this.save();
-        return;
-      }
+      else if (gateOverall(r.checks) === "WARN") this.message = warnNote(r.checks);
+      try { warmupWordCheck(); } catch (e) {}
       this.go(r.hardFail ? "failcheck" : "ready");
+      const checked = startWordCheck(this, g);
+      if (r.hardFail) try { localStorage.setItem("vbv.lastFail.v1", JSON.stringify({ at: (/* @__PURE__ */ new Date()).toISOString(), id: this.verseId, sr: this.mic && this.mic.sampleRate, checks: r.checks, meta: r.meta })); } catch (e) {}
+      if (r.hardFail) return;
+      if (this.autoSave) {
+        const issues = await checked;
+        if (g !== this.gen) return;
+        if (!issues.length) {
+          await this.save();
+          return;
+        }
+        // Word alert stays on the review, before the next verse. Save is not blocked.
+        this.emit();
+      }
     }
     /**
      * Save: hand the WAV to the storage adapter (IndexedDB queue, returns at once),
@@ -8337,6 +8518,7 @@ var VBVRec = (() => {
       this.takesById[take.verseId] = take;
       this.take = null;
       this.message = "";
+      this.wordCheckMessage = ""; this.wordCheckIssues = [];
       if (this.onTakeAccepted) {
         this.onTakeAccepted({
           id: take.verseId,
@@ -8387,6 +8569,7 @@ var VBVRec = (() => {
       this.index = i;
       this.take = null;
       this.message = "";
+      this.wordCheckMessage = ""; this.wordCheckIssues = [];
       this.saveError = null;
       if (this.statuses[this.verseId] === V.SAVED) this.state = V.SAVED;
       this.persist();
@@ -8539,32 +8722,80 @@ var VBVRec = (() => {
     const p = parseId(id);
     return p ? `${p.chapter}:${p.verse}` : id;
   }
-  var CHECK_REASONS = {
-    format: "The file format is not a 48 kHz mono WAV.",
-    speech: "No speech was heard.",
-    duration: "The length doesn\u2019t match the verse.",
-    lead_in: "The lead-in is off.",
-    clipping: "The take is clipped.",
-    noise_floor: "The background is a little noisy.",
-    snr: "The voice is a little quiet against the room.",
-    internal_silence: "A pause is a little long.",
-    loudness: "The loudness is off."
+  var CAUSE = {
+    noise: "Background noise heard before you spoke.",
+    leadShort: "You started a little too soon. Wait for the 1-second count.",
+    leadLong: "A long pause before you started.",
+    softOnset: "The verse starts with a soft sound, so I couldn't find the exact start. It's probably fine, but have a listen.",
+    clipping: "Too loud in places. Move back a little.",
+    quiet: "A bit quiet. Move a little closer.",
+    loud: "A bit loud. Move back a little.",
+    pause: "A long pause in the middle.",
+    noSpeech: "No voice was heard.",
+    tooShort: "Too short for this verse.",
+    tooLong: "Too long for this verse.",
+    durationOff: "The length is a little off for this verse.",
+    format: "The recording format was wrong."
   };
-  function gateReason(checks) {
-    const overall = gateOverall(checks);
-    if (overall === "PASS") return "Ready to stitch.";
-    const order = ["format", "speech", "duration", "lead_in", "clipping", "noise_floor", "snr", "internal_silence", "loudness"];
-    const want = overall === "FAIL" ? "FAIL" : "WARN";
-    for (const k of order) {
-      const c = checks && checks[k];
-      if (c && c.status === want) return c.note || CHECK_REASONS[k] || "Please check this take.";
+  var CHECK_REASONS = {
+    format: CAUSE.format,
+    speech: CAUSE.noSpeech,
+    duration: CAUSE.durationOff,
+    lead_in: CAUSE.leadLong,
+    clipping: CAUSE.clipping,
+    noise_floor: CAUSE.noise,
+    snr: CAUSE.noise,
+    internal_silence: CAUSE.pause,
+    loudness: CAUSE.quiet,
+    soft_onset: CAUSE.softOnset
+  };
+  function verseStartsSoft(text) {
+    const first = String(text || "").trim().replace(/^[^A-Za-z]+/, "").split(/\s+/)[0] || "";
+    return /^(th|wh|sh|ch|ph|[sfhw])/i.test(first);
+  }
+  function detectSoftOnset({ verseText, onsetRampMs, onsetMarginDb } = {}) {
+    const softText = verseStartsSoft(verseText);
+    const slowRamp = onsetRampMs != null && onsetRampMs >= 200;
+    const verySlow = onsetRampMs != null && onsetRampMs >= 250;
+    const lowConf = onsetMarginDb != null && onsetMarginDb < 2;
+    const soft = !!(verySlow || (softText && slowRamp));
+    return { soft, softText, slowRamp, lowConf, status: "WARN", neverFail: true };
+  }
+  function gateIssues(checks, gate = {}) {
+    const c = checks || {};
+    const flagged = (k) => c[k] && (c[k].status === "FAIL" || c[k].status === "WARN");
+    const out = [];
+    const add = (key, message, status) => { if (message) out.push({ key, message, status: status || "WARN" }); };
+    if (flagged("format")) add("format", CAUSE.format, c.format.status);
+    if (flagged("speech")) add("speech", CAUSE.noSpeech, c.speech.status);
+    if (flagged("duration")) {
+      const v = c.duration.value;
+      const shorter = v != null ? v < 1 : (c.duration.seconds != null && c.duration.expected_s != null && c.duration.seconds < c.duration.expected_s);
+      add("duration", c.duration.status === "FAIL" ? (shorter ? CAUSE.tooShort : CAUSE.tooLong) : CAUSE.durationOff, c.duration.status);
     }
-    for (const [k, c] of Object.entries(checks || {})) {
-      if (c && c.status === want && k !== "overall" && k !== "checks") {
-        return c.note || CHECK_REASONS[k] || "Please check this take.";
-      }
+    if (flagged("lead_in")) {
+      const v = Number(c.lead_in.value) || 0;
+      const lo = (gate.leadInPass && gate.leadInPass[0]) != null ? gate.leadInPass[0] : 0.02;
+      add("lead_in", v < lo ? CAUSE.leadShort : CAUSE.leadLong, c.lead_in.status);
     }
-    return "Please check this take.";
+    if (flagged("soft_onset")) add("soft_onset", (c.soft_onset && c.soft_onset.note) || CAUSE.softOnset, "WARN");
+    if (flagged("clipping")) add("clipping", CAUSE.clipping, c.clipping.status);
+    if (flagged("noise_floor") || flagged("snr")) {
+      const st = (c.noise_floor && c.noise_floor.status === "FAIL") || (c.snr && c.snr.status === "FAIL") ? "FAIL" : "WARN";
+      add("noise", CAUSE.noise, st);
+    }
+    if (flagged("internal_silence")) add("internal_silence", CAUSE.pause, c.internal_silence.status);
+    if (flagged("loudness")) {
+      const target = gate.targetLufs != null ? gate.targetLufs : -16;
+      const v = c.loudness.value;
+      add("loudness", (v == null || v < target) ? CAUSE.quiet : CAUSE.loud, c.loudness.status);
+    }
+    return out;
+  }
+  function gateReason(checks, gate) {
+    const list = gateIssues(checks, gate || {});
+    if (!list.length) return "Ready to stitch.";
+    return list.map((x) => x.message).join(" ");
   }
   function readingOf(text, id) {
     if (!text || !id) return "";
@@ -8609,12 +8840,17 @@ var VBVRec = (() => {
       const st = rec.statuses && rec.statuses[vid];
       const q = queue.find((x) => x.id === vid);
       const overall = checks ? gateOverall(checks) : st === V.SAVED ? "PASS" : null;
+      const takeObj = take || (rec.take && rec.take.verseId === vid ? rec.take : null);
+      const notes = checks ? gateIssues(checks, rec.gate || {}).map((x) => x.message) : [];
+      const wordAlerts = (takeObj && takeObj.wordCheckIssues) || (vid === id && rec.wordCheckIssues) || [];
       return {
         id: vid,
         short: shortRef(vid),
         ref: refOf(vid),
         result: overall,
-        reason: checks ? gateReason(checks) : st === V.SAVED ? "Ready to stitch." : "",
+        reason: checks ? gateReason(checks, rec.gate) : st === V.SAVED ? "Ready to stitch." : "",
+        notes,
+        wordAlerts,
         upload: q ? q.state : st === V.SAVED ? "saved" : null
       };
     });
@@ -8636,9 +8872,9 @@ var VBVRec = (() => {
     if (fails.length) {
       warnCopy = `A check failed on ${fails.map((r) => r.ref).join(", ")}. Record ${fails.length === 1 ? "that verse" : "those verses"} again before stitching.`;
     } else if (warns.length) {
-      warnCopy = `${warns.length === 1 ? warns[0].ref.replace(/^.* /, "Verse ") + " has a warning" : warns.length + " verses have a warning"}. You can record ${warns.length === 1 ? "it" : "them"} again, or stitch with this take.`;
+      warnCopy = `${warns.length === 1 ? warns[0].ref.replace(/^.* /, "Verse ") + " has a small note" : warns.length + " verses have a small note"}. You can record ${warns.length === 1 ? "it" : "them"} again, or keep ${warns.length === 1 ? "this take" : "these takes"}.`;
       if (warns.length === 1) {
-        warnCopy = `Verse ${shortRef(warns[0].id).split(":")[1]} has a warning. You can record it again, or stitch with this take.`;
+        warnCopy = `Verse ${shortRef(warns[0].id).split(":")[1]} has a small note. You can record it again, or keep this take.`;
       }
     }
     if (pending.length) {
@@ -8667,6 +8903,9 @@ var VBVRec = (() => {
       strip,
       frozenStrip,
       message: rec.message || "",
+      wordCheckMessage: rec.wordCheckMessage || "", wordCheckTook: rec.wordCheckTook || "",
+      wordAlerts: (rec.take && rec.take.wordCheckIssues) || rec.wordCheckIssues || [],
+      notes: rec.take && rec.take.checks ? gateIssues(rec.take.checks, rec.gate || {}).map((x) => x.message) : [],
       gateRows: rows,
       heading,
       completeBlurb: "Checks on each verse. A FAIL names the verses to record again. A WARN needs your OK.",
@@ -8766,8 +9005,11 @@ var VBVRec = (() => {
     root.appendChild(verseHead(model));
     const { panel, text } = versePanel(model);
     root.appendChild(panel);
-    if (model.message && !model.recording) {
-      root.appendChild(el("p", { class: "vbv-message", text: model.message, role: "status" }));
+    if (!model.recording) {
+      const recIssues = issueBlocks(model.wordAlerts, model.notes);
+      if (recIssues) root.appendChild(recIssues);
+      if (model.message && !String(model.message).startsWith("Small note")) root.appendChild(el("p", { class: "vbv-message", text: model.message, role: "status" }));
+      if (model.wordCheckMessage && !(model.wordAlerts && model.wordAlerts.length)) root.appendChild(el("p", { class: "vbv-message vbv-message-note", text: model.wordCheckMessage, role: "status" })); if (model.wordCheckTook) root.appendChild(el("p", { class: "vbv-wordcheck-time", text: model.wordCheckTook, role: "status" }));
     }
     if (model.recording) {
       const banner = el("div", { class: "vbv-rec-banner", role: "status", "aria-live": "polite" });
@@ -8804,11 +9046,31 @@ var VBVRec = (() => {
     }
     queueMicrotask(() => fitVerseText(text, model.verseText));
   }
+  function issueBlocks(wordAlerts, notes) {
+    const wrap = el("div", { class: "vbv-issue-blocks" });
+    let any = false;
+    if (wordAlerts && wordAlerts.length) {
+      const box = el("div", { class: "vbv-word-alert", role: "status" });
+      for (const line of wordAlerts) box.appendChild(el("p", { text: line }));
+      wrap.appendChild(box);
+      any = true;
+    }
+    if (notes && notes.length) {
+      const ul = el("ul", { class: "vbv-note-list" });
+      for (const line of notes) ul.appendChild(el("li", { text: line }));
+      wrap.appendChild(ul);
+      any = true;
+    }
+    return any ? wrap : null;
+  }
   function renderReview(root, model) {
     root.appendChild(verseHead(model));
+    const reviewIssues = issueBlocks(model.wordAlerts, model.notes);
+    if (reviewIssues) root.appendChild(reviewIssues);
     const { panel, text } = versePanel(model);
     root.appendChild(panel);
-    if (model.message) root.appendChild(el("p", { class: "vbv-message", text: model.message, role: "status" }));
+    if (model.message && !String(model.message).startsWith("Small note")) root.appendChild(el("p", { class: "vbv-message", text: model.message, role: "status" }));
+    if (model.wordCheckMessage && !(model.wordAlerts && model.wordAlerts.length)) root.appendChild(el("p", { class: "vbv-message vbv-message-note", text: model.wordCheckMessage, role: "status" })); if (model.wordCheckTook) root.appendChild(el("p", { class: "vbv-wordcheck-time", text: model.wordCheckTook, role: "status" }));
     const row = el("div", { class: "vbv-review-row" });
     const play = el("button", { type: "button", class: "vbv-btn vbv-btn-secondary", "data-action": "play", "aria-label": model.playLabel });
     play.appendChild(playIcon());
@@ -8832,10 +9094,15 @@ var VBVRec = (() => {
       for (const r of colRows) {
         const row = el("div", { class: "vbv-gate-row" });
         if (r.result === "WARN" || r.result === "FAIL") row.dataset.result = r.result;
+        if (r.wordAlerts && r.wordAlerts.length) row.dataset.wordAlert = "1";
         row.appendChild(el("span", { class: "vbv-gate-ref", text: r.short }));
         const mark = el("span", { class: "vbv-gate-mark", text: r.result || "\u2014", dataset: { result: r.result || "" } });
         row.appendChild(mark);
-        row.appendChild(el("span", { class: "vbv-gate-reason", text: r.reason || "" }));
+        const reason = el("span", { class: "vbv-gate-reason" });
+        const blocks = issueBlocks(r.wordAlerts, r.notes);
+        if (blocks) reason.appendChild(blocks);
+        else if (r.reason) reason.appendChild(document.createTextNode(r.reason));
+        row.appendChild(reason);
         col.appendChild(row);
       }
       grid.appendChild(col);
@@ -9975,8 +10242,9 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
   }
   function isBusy() { var r = handle && handle.recorder; return !!r && (r.state === 'RECORDING' || r.state === 'STARTING' || r.state === 'PROCESSING'); }
   function releaseMic() { var r = handle && handle.recorder; if (r) { r.cancel(); if (r.mic) { try { r.mic.close(); } catch (e) {} r.mic = null; } } }
-  if (KJB.on) KJB.on('tab', function (t) { if (t !== 'recorder') releaseMic(); else { place(); sizeMount(); } });
+  if (KJB.on) KJB.on('tab', function (t) { if (t !== 'recorder') releaseMic(); else { place(); sizeMount(); try { warmupWordCheck(); } catch (e) {} } });
   KJB.mount && section && setMode(localStorage.getItem(MODEKEY) === 'verse' ? 'verse' : 'passage', false);
+  if (window.KJB && KJB.current === 'recorder') try { warmupWordCheck(); } catch (e) {}
 
 
   // ---------- layout: landscape gets a definite height so KJBVR's fit can size the verse; never below 40 CSS px ----------
