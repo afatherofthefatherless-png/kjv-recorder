@@ -8131,6 +8131,25 @@ var VBVRec = (() => {
     const w = warnWordsSoft(checks), t = w.length ? w.join(", ") : "a small check note";
     return "Small note: " + t + ". You can save this take, or record it again.";
   }
+  function wordCheckScriptUrl() {
+    const href = (location.pathname.endsWith("/") || /index\.html$/i.test(location.pathname)) ? location.href : location.href + "/";
+    return new URL("word-check.js", new URL(href, location.href)).href;
+  }
+  function warmupWordCheck() {
+    const go = (api) => {
+      if (!api) return;
+      globalThis.VBVWordCheck = api;
+      if (api.warmup) return api.warmup();
+      if (api.loadPipeline) return api.loadPipeline();
+    };
+    if (globalThis.VBVWordCheck) return Promise.resolve(go(globalThis.VBVWordCheck)).catch(function () {});
+    return import(wordCheckScriptUrl()).then((m) => go(m.default || m.VBVWordCheck || m)).catch(function () {});
+  }
+  function formatWordCheckTook(ms, runtime) {
+    const s = Math.max(0, Number(ms) / 1000);
+    const label = runtime && runtime.label ? " (" + runtime.label + ")" : "";
+    return "Word check took " + s.toFixed(1) + " s" + label;
+  }
   function startWordCheck(rec, gen) {
     try {
       const text = rec.textSource && rec.textSource.readingText ? rec.textSource.readingText(rec.verseId) : rec.readingText;
@@ -8138,15 +8157,26 @@ var VBVRec = (() => {
       if (!text || !wav) return;
       let cached = false;
       try { cached = !!(globalThis.localStorage && localStorage.getItem("kjvrec-test-vbv.wordCheck.modelReady.v1")); } catch (e) {}
-      rec.wordCheckMessage = cached ? "Checking words…" : "Checking words… getting ready (a one-time download)…"; rec.wordCheckTook = ""; const _wcT0 = Date.now(); const _wcTick = setInterval(function () { if (gen !== rec.gen) { clearInterval(_wcTick); return; } if (rec.wordCheckTook) return; const s = Math.max(1, Math.round((Date.now() - _wcT0) / 1000)); rec.wordCheckMessage = (cached ? "Checking words…" : "Checking words… getting ready (a one-time download)…") + " " + s + " s"; rec.emit(); }, 1000);
+      rec.wordCheckAgain = false;
+      rec.wordCheckTook = "";
       rec.wordCheckIssues = [];
+      rec.wordCheckMessage = cached ? "Checking words…" : "Checking words… getting ready (a one-time download)…";
+      const _wcT0 = Date.now();
+      const checkingText = () => rec.wordCheckAgain ? "Checking again…" : (cached ? "Checking words…" : "Checking words… getting ready (a one-time download)…");
+      const _wcTick = setInterval(function () {
+        if (gen !== rec.gen) { clearInterval(_wcTick); return; }
+        if (rec.wordCheckTook) return;
+        const s = (Date.now() - _wcT0) / 1000;
+        rec.wordCheckMessage = checkingText() + " " + s.toFixed(1) + " s";
+        rec.emit();
+      }, 200);
       rec.emit();
-      const applyIssues = (issues, note, unclear) => {
+      const applyIssues = (issues, note, unclear, runtime) => {
         try { clearInterval(_wcTick); } catch (e) {}
         if (gen !== rec.gen) return;
         const lines = Array.isArray(issues) ? issues.slice() : [];
         rec.wordCheckIssues = lines;
-        rec.wordCheckTook = "Word check took " + Math.max(0, Math.round((Date.now() - _wcT0) / 1000)) + " s";
+        rec.wordCheckTook = formatWordCheckTook(Date.now() - _wcT0, runtime);
         rec.wordCheckMessage = lines.length ? lines.join(" \u00b7 ") : (note || "");
         if (rec.take) rec.take.wordCheckIssues = lines;
         if (rec.takesById && rec.verseId && rec.takesById[rec.verseId]) rec.takesById[rec.verseId].wordCheckIssues = lines;
@@ -8155,16 +8185,21 @@ var VBVRec = (() => {
       const finish = (note) => applyIssues([], note);
       const skip = () => applyIssues([], "");
       const run = (api) => {
+        const onStatus = (s) => {
+          if (gen !== rec.gen) return;
+          if (s === "checking-again") {
+            rec.wordCheckAgain = true;
+            rec.wordCheckMessage = "Checking again…";
+            rec.emit();
+          }
+        };
         const go = api.checkAudio
-          ? api.checkAudio(wav, text).then((r) => applyIssues((r && r.issues) || [], r && r.note, r && r.unclearEnd))
+          ? api.checkAudio(wav, text, { onStatus }).then((r) => applyIssues((r && r.issues) || [], r && r.note, r && r.unclearEnd, (r && r.runtime) || (api.getRuntime && api.getRuntime())))
           : api.checkTake({ wav, text }).then(finish);
         return go.catch(skip);
       };
-      if (globalThis.VBVWordCheck && VBVWordCheck.checkTake) run(VBVWordCheck);
-      else {
-        const url = new URL("word-check.js", new URL(location.pathname.endsWith("/") || /index\.html$/i.test(location.pathname) ? location.href : location.href + "/", location.href)).href;
-        import(url).then((m) => run(m.default || m.VBVWordCheck || m)).catch(skip);
-      }
+      if (globalThis.VBVWordCheck && (VBVWordCheck.checkAudio || VBVWordCheck.checkTake)) run(VBVWordCheck);
+      else import(wordCheckScriptUrl()).then((m) => run(m.default || m.VBVWordCheck || m)).catch(skip);
     } catch (e) {
       try { clearInterval(_wcTick); } catch (x) {}
       rec.wordCheckMessage = "";
@@ -8409,6 +8444,7 @@ var VBVRec = (() => {
     async stop() {
       if (this.state !== V.RECORDING) return;
       const g = this.gen;
+      try { warmupWordCheck(); } catch (e) {}
       this.mic && this.mic.flush && this.mic.flush();
       this.go("stop");
       if (this.flushWaitMs) await new Promise((r2) => setTimeout(r2, this.flushWaitMs));
@@ -10227,8 +10263,9 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
   }
   function isBusy() { var r = handle && handle.recorder; return !!r && (r.state === 'RECORDING' || r.state === 'STARTING' || r.state === 'PROCESSING'); }
   function releaseMic() { var r = handle && handle.recorder; if (r) { r.cancel(); if (r.mic) { try { r.mic.close(); } catch (e) {} r.mic = null; } } }
-  if (KJB.on) KJB.on('tab', function (t) { if (t !== 'recorder') releaseMic(); else { place(); sizeMount(); } });
+  if (KJB.on) KJB.on('tab', function (t) { if (t !== 'recorder') releaseMic(); else { place(); sizeMount(); try { warmupWordCheck(); } catch (e) {} } });
   KJB.mount && section && setMode(localStorage.getItem(MODEKEY) === 'verse' ? 'verse' : 'passage', false);
+  if (window.KJB && KJB.current === 'recorder') try { warmupWordCheck(); } catch (e) {}
 
 
   // ---------- layout: landscape gets a definite height so KJBVR's fit can size the verse; never below 40 CSS px ----------

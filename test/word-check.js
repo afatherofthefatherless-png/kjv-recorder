@@ -151,6 +151,8 @@ export function equiv(a, b) { // align_unit.py:83-96, plus near-miss
   for (const x of sa) { if (sb.has(x)) { inter = true; break; } }
   if (inter || sb.has(a) || sa.has(b)) return true;
   if (Math.min(a.length, b.length) >= 5 && editDistance(a, b) <= 1) return true;
+  // Short ASR slips (rowed/rode, heard/herd). Keep well/will and son/sun strict.
+  if (editDistance(a, b) <= 1 && Math.min(a.length, b.length) >= 4 && commonPrefixLen(a, b) >= 2) return true;
   const na = NEAR[a], nb = NEAR[b];
   if ((na && na.has(b)) || (nb && nb.has(a))) return true;
   const sta = stemInfl(a), stb = stemInfl(b);
@@ -546,47 +548,90 @@ export function speechBounds(samples, sampleRate, opts = {}) {
 let _pipe = null;
 let _pipePromise = null;
 let _pipeModel = null;
+let _pipeRuntime = null;
 
-export async function loadPipeline(modelId = MODEL_ID) {
-  if (_pipe && _pipe._vbvModel === modelId) return _pipe;
-  if (_pipePromise && _pipeModel === modelId) return _pipePromise;
+export function getRuntime() {
+  return _pipeRuntime ? { device: _pipeRuntime.device, dtype: _pipeRuntime.dtype, label: _pipeRuntime.label } : null;
+}
+
+async function gpuAdapterAvailable() {
+  try {
+    if (typeof navigator === "undefined" || !navigator.gpu) return false;
+    const adapter = await navigator.gpu.requestAdapter();
+    return !!adapter;
+  } catch {
+    return false;
+  }
+}
+
+function applyEnv(env) {
+  if (!env) return;
+  env.allowLocalModels = false;
+  env.useBrowserCache = false;
+  env.useCustomCache = true;
+  env.customCache = {
+    match: (req) => caches.open("kjvrec-test-transformers").then((c) => c.match(req)),
+    put: (req, res) => caches.open("kjvrec-test-transformers").then((c) => c.put(req, res))
+  };
+  try {
+    if (env.backends && env.backends.onnx && env.backends.onnx.wasm) {
+      env.backends.onnx.wasm.numThreads = 1; // GitHub Pages has no COOP/COEP
+    }
+  } catch {}
+}
+
+async function makePipeline(mod, modelId, device, dtype) {
+  const transcriber = await mod.pipeline("automatic-speech-recognition", modelId, { device, dtype });
+  transcriber._vbvModel = modelId;
+  try {
+    const cfg = transcriber.model && transcriber.model.generation_config;
+    if (cfg) cfg.forced_decoder_ids = null;
+  } catch {}
+  return transcriber;
+}
+
+export async function loadPipeline(modelId = MODEL_ID, opts = {}) {
+  const forceDevice = opts.device || null;
+  if (_pipe && _pipe._vbvModel === modelId && (!forceDevice || (_pipeRuntime && _pipeRuntime.device === forceDevice))) {
+    return _pipe;
+  }
+  if (_pipePromise && _pipeModel === modelId && !forceDevice) return _pipePromise;
   if (_pipe || _pipePromise) await resetPipeline();
   _pipeModel = modelId;
   _pipePromise = (async () => {
     const mod = await import(/* @vite-ignore */ TRANSFORMERS_URL);
-    const { pipeline, env } = mod;
-    if (env) {
-      env.allowLocalModels = false;
-      env.useBrowserCache = false;
-      env.useCustomCache = true;
-      env.customCache = {
-        match: (req) => caches.open("kjvrec-test-transformers").then((c) => c.match(req)),
-        put: (req, res) => caches.open("kjvrec-test-transformers").then((c) => c.put(req, res))
-      };
-      try {
-        if (env.backends && env.backends.onnx && env.backends.onnx.wasm) {
-          env.backends.onnx.wasm.numThreads = 1; // GitHub Pages has no COOP/COEP
-        }
-      } catch {}
+    applyEnv(mod.env);
+    const attempts = [];
+    if (forceDevice === "wasm") {
+      attempts.push({ device: "wasm", dtype: "q8", label: "WASM" });
+    } else {
+      if (forceDevice !== "wasm" && await gpuAdapterAvailable()) {
+        attempts.push({ device: "webgpu", dtype: { encoder_model: "fp16", decoder_model_merged: "q4f16" }, label: "GPU" });
+        attempts.push({ device: "webgpu", dtype: "fp16", label: "GPU" });
+      }
+      attempts.push({ device: "wasm", dtype: "q8", label: "WASM" });
     }
-    const transcriber = await pipeline("automatic-speech-recognition", modelId, {
-      device: "wasm",
-      dtype: "q8",
-    });
-    transcriber._vbvModel = modelId;
-    try {
-      const cfg = transcriber.model && transcriber.model.generation_config;
-      if (cfg) cfg.forced_decoder_ids = null;
-    } catch {}
-    _pipe = transcriber;
-    markModelReady();
-    return transcriber;
+    let lastErr = null;
+    for (const att of attempts) {
+      try {
+        const transcriber = await makePipeline(mod, modelId, att.device, att.dtype);
+        _pipe = transcriber;
+        _pipeRuntime = { device: att.device, dtype: att.dtype, label: att.label };
+        markModelReady();
+        return transcriber;
+      } catch (e) {
+        lastErr = e;
+        try { /* continue to the next device/dtype */ } catch {}
+      }
+    }
+    throw lastErr || new Error("Could not load the word-check model");
   })();
   try {
     return await _pipePromise;
   } catch (e) {
     _pipePromise = null;
     _pipeModel = null;
+    _pipeRuntime = null;
     throw e;
   }
 }
@@ -596,7 +641,17 @@ export async function resetPipeline() {
   _pipe = null;
   _pipePromise = null;
   _pipeModel = null;
+  _pipeRuntime = null;
   try { if (old && typeof old.dispose === "function") await old.dispose(); } catch {}
+}
+
+/** Load (and lightly run) the model when the recorder opens, so Stop is not paying the first-load cost. */
+export async function warmup(modelId = MODEL_ID, opts = {}) {
+  const t = await loadPipeline(modelId, opts);
+  try {
+    await transcribePcm(t, new Float32Array(8000), "King James Bible.", { numBeams: 1, prompt: true });
+  } catch {}
+  return getRuntime();
 }
 
 function toIdList(ids) {
@@ -841,16 +896,70 @@ export function verifyShouldKeep(f) {
   return false;
 }
 
+const LOW_COVERAGE = 0.92;
+const LOW_WORD_PROB = 0.55;
+
+/** Non-exact alignments that the near-miss / archaic rules accepted as a match. */
+export function hasNearMiss(ops, kjv, asr) {
+  for (const [kind, i, j] of ops || []) {
+    if (kind !== "match" || i == null || j == null) continue;
+    const a = norm(kjv[i]), b = norm(asrWord(asr[j]));
+    if (a && b && a !== b) return true;
+  }
+  return false;
+}
+
+export function hasLowConfidence(words, flags) {
+  if ((flags || []).some((f) => f && f.confidence === "low")) return true;
+  for (const w of words || []) {
+    const p = asrProb(w);
+    if (p != null && p < LOW_WORD_PROB) return true;
+  }
+  return false;
+}
+
+/**
+ * A second listen runs only when the first pass is in doubt:
+ * any flag, low coverage, early cut-off, a near-miss match, or a low-confidence segment.
+ */
+export function firstPassDoubt(checked, words, speech, kjvText) {
+  const reasons = [];
+  if (!checked) return ["no-result"];
+  if ((checked.flags || []).length) reasons.push("flags");
+  if ((checked.coverage == null) || checked.coverage < LOW_COVERAGE) reasons.push("low-coverage");
+  if (checked.unclearEnd || isEarlyCutoff(words, speech, kjvText)) reasons.push("cutoff");
+  if (hasNearMiss(checked.ops, checked.kjv, checked.asr || words)) reasons.push("near-miss");
+  if (hasLowConfidence(words, checked.flags)) reasons.push("low-confidence");
+  // A prompted proper name can be recited over a swap (Jonah heard, Nineveh said).
+  if (hasPromptedNameMatch(checked, kjvText)) reasons.push("prompted-name");
+  return reasons;
+}
+
+function hasPromptedNameMatch(checked, kjvText) {
+  const names = new Set();
+  for (const tok of tokensOf(kjvText)) {
+    if (isCapped(tok) && norm(tok).length >= 5) names.add(norm(tok));
+  }
+  if (!names.size) return false;
+  for (const [kind, i] of checked.ops || []) {
+    if (kind === "match" && i != null && names.has(norm(checked.kjv[i]))) return true;
+  }
+  return false;
+}
+
 export async function checkAudio(wav, text, callOpts = {}) {
   const kjvText = text || "";
   if (!kjvText || !wav) return { flags: [], note: "", coverage: 0, words: [], unclearEnd: false };
   const { samples, sampleRate } = decodeWavPcm16(wav);
   const audio = resampleLinear(samples, sampleRate, 16000);
   const speech = speechBounds(audio, 16000);
-  const transcriber = await loadPipeline(callOpts.model || MODEL_ID);
+  const transcriber = await loadPipeline(callOpts.model || MODEL_ID, { device: callOpts.device });
   const now = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
   const t0 = now();
-  const mainPrompt = callOpts.promptText != null ? callOpts.promptText : kjvText;
+  const onStatus = callOpts.onStatus;
+  // Coordinate the one listen: bias names/archaic forms, but do not feed the
+  // whole verse as a script to recite (that hid real missing/swapped words).
+  const mainPrompt = callOpts.promptText != null ? callOpts.promptText : vocabPrompt(kjvText);
   let pass = await transcribePcm(transcriber, audio, mainPrompt, callOpts);
   let words = pass.words;
   let retried = false;
@@ -863,26 +972,25 @@ export async function checkAudio(wav, text, callOpts = {}) {
     words = mergeTail(words, tail.words, offset, overlap);
   };
 
+  // Cheap cut-off handling: only re-run the uncovered tail when coverage is clearly short.
   if (isEarlyCutoff(words, speech, kjvText)) {
     const lastT = lastAsrTime(words) ?? (speech.start + (words.length / Math.max(1, tokensOf(kjvText).length)) * (speech.end - speech.start));
     const tailStart = Math.max(0, Math.min(speech.end - 0.6, lastT - overlap));
     const i0 = Math.max(0, Math.floor(tailStart * 16000));
-    await tryTail(audio.subarray(i0), tailStart, remainingKjvPrompt(kjvText, words) || kjvText);
-    if (isEarlyCutoff(words, speech, kjvText)) {
-      const lastT2 = lastAsrTime(words) ?? lastT;
-      const tailStart2 = Math.max(0, Math.min(speech.end - 0.6, lastT2 - 0.3));
-      const i1 = Math.max(0, Math.floor(tailStart2 * 16000));
-      await tryTail(audio.subarray(i1), tailStart2, remainingKjvPrompt(kjvText, words) || kjvText, { ...callOpts, numBeams: 1 });
-    }
+    await tryTail(audio.subarray(i0), tailStart, remainingKjvPrompt(kjvText, words) || kjvText, { ...callOpts, numBeams: 1 });
   }
   const stillCut = isEarlyCutoff(words, speech, kjvText);
   let checked = checkTranscript(kjvText, words, { speechEnd: speech.end, unclearEnd: stillCut });
   let verified = false;
   let verifyFlags = [];
-  // The fluent verse prompt can make Whisper recite the KJV even when a word
-  // was missing or swapped. A second, style-only pass catches those strong
-  // disagreements, while typo-like subs are left to the prompted pass.
-  if (callOpts.verify !== false) {
+  let secondPass = false;
+  // Robin: one listen by default; a second listen only when the first is in doubt.
+  let doubtReasons = [];
+  if (callOpts.verify === true) doubtReasons = ["forced"];
+  else if (callOpts.verify !== false) doubtReasons = firstPassDoubt(checked, words, speech, kjvText);
+  if (doubtReasons.length) {
+    secondPass = true;
+    try { if (onStatus) onStatus("checking-again"); } catch {}
     const verifyPass = await transcribePcm(transcriber, audio, "King James Bible.", { ...callOpts, prompt: true });
     const vChecked = checkTranscript(kjvText, verifyPass.words, { speechEnd: speech.end, unclearEnd: false });
     verifyFlags = (vChecked.flags || []).filter(verifyShouldKeep);
@@ -890,6 +998,15 @@ export async function checkAudio(wav, text, callOpts = {}) {
       verified = true;
       words = verifyPass.words;
       checked = { ...vChecked, flags: verifyFlags, unclearEnd: false };
+    } else {
+      // Second listen did not confirm a real missing/extra/swap. Drop typo-like
+      // first-pass slips (rowed/rode, gourd/God) so they do not stand as flags.
+      const kept = (checked.flags || []).filter((f) => {
+        const a = norm(f && f.kjv), b = norm(f && f.asr);
+        if (f.type === "sub" && a && b && (isTypoLike(a, b) || COMMON_ASR.has(b))) return false;
+        return true;
+      });
+      checked = { ...checked, flags: kept };
     }
   }
   const issues = issueLines(checked.flags, { unclearEnd: checked.unclearEnd });
@@ -909,6 +1026,9 @@ export async function checkAudio(wav, text, callOpts = {}) {
     retried,
     verified,
     verifyFlags,
+    secondPass,
+    doubtReasons,
+    runtime: getRuntime(),
     speech,
     asr_ms: Math.round(now() - t0),
   };
@@ -930,9 +1050,9 @@ export async function checkTake({ wav, text, onStatus } = {}) {
 const api = {
   tokensOf, norm, editDistance, equiv, equivTokens, alignTokens, flagOps, cleanFlags,
   checkTranscript, formatNote, issueLines, isModelCached, decodeWavPcm16, resampleLinear,
-  transcribeWav, checkTake, checkAudio, loadPipeline, resetPipeline,
+  transcribeWav, checkTake, checkAudio, loadPipeline, resetPipeline, warmup, getRuntime,
   buildPromptDecoderIds, vocabPrompt, speechBounds, dropTrailingHallucinations,
-  isEarlyCutoff, mergeTail,
+  isEarlyCutoff, mergeTail, firstPassDoubt, hasNearMiss, hasLowConfidence,
   ARCHAIC, FUNC, HALLUC, CLOSED, NEAR, MODEL_ID, WHISPER_EN,
 };
 export default api;
