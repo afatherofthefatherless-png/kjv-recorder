@@ -2,6 +2,7 @@
 <html lang="en-GB">
 <head>
 <meta charset="utf-8">
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#000000">
@@ -1653,6 +1654,16 @@ html {
 window.KJVREC_TEST = true;
 window.KJVREC_TEST_PREFIX = 'kjvrec-test-';
 window.KJVREC_TEST_NO_DRIVE = false;
+  try {
+    if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+      navigator.serviceWorker.getRegistrations().then(function (rs) {
+        rs.forEach(function (r) { try { r.unregister(); } catch (e) {} });
+      });
+    }
+    if (window.caches && caches.keys) {
+      caches.keys().then(function (keys) { keys.forEach(function (k) { caches.delete(k); }); });
+    }
+  } catch (e) {}
 (function () {
   var p = location.pathname || '';
   if (!/\/$/.test(p) && !/index\.html$/i.test(p)) {
@@ -10165,7 +10176,7 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
   var INBOX = '1gTlRsu_nVCdeErA6uykcsGc3IikESxa2';
   var ROOT = '1YztdP5Gd_3Is3SrQ7LXz588nhZXq_KAf';
   var TOKEN_KEY = 'kjb1.google.token.v1';
-  var PICK_KEY = 'kjvrec-test-vbv.drive.inboxFolder.v1';
+  var PICK_KEY = 'vbv.drive.inboxFolder.v1';
   var API = 'https://www.googleapis.com/drive/v3/files';
   var UP = 'https://www.googleapis.com/upload/drive/v3/files';
   var FIELDS = 'id,name,parents,sha256Checksum,size,appProperties,properties';
@@ -10179,7 +10190,7 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
   function idb() {
     if (idb.p) return idb.p;
     idb.p = new Promise(function (res, rej) {
-      var r = indexedDB.open('kjvrec-test-vbv.queue.v1', 1);
+      var r = indexedDB.open('vbv.queue.v1', 1);
       r.onupgradeneeded = function () { var d = r.result; if (!d.objectStoreNames.contains('takes')) d.createObjectStore('takes', { keyPath: 'id' }); if (!d.objectStoreNames.contains('files')) d.createObjectStore('files', { keyPath: 'id' }); };
       r.onsuccess = function () { res(r.result); }; r.onerror = function () { rej(r.error); };
     });
@@ -10378,13 +10389,6 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
       return { body: new Blob([head, ab, '\r\n--' + b + '--']), type: 'multipart/related; boundary=' + b };
     }
     function send(method, fileId, meta, t, tok) {
-      var mime0 = (meta && meta.mimeType) || (t && t.mime) || '';
-      if (/google-apps\.folder/i.test(mime0) || mime0 === 'application/vnd.google-apps.folder') {
-        return Promise.reject(err('disabled', 'This page never creates Drive folders. It only puts WAV files into 00 Inbox.'));
-      }
-      if (method === 'POST' && meta && meta.parents && (meta.parents.length !== 1 || meta.parents[0] !== INBOX)) {
-        return Promise.reject(err('disabled', 'This page only puts WAV files into 00 Inbox and never creates folders.'));
-      }
       var base = UP + (fileId ? '/' + encodeURIComponent(fileId) : '');
       var qs = '&fields=' + encodeURIComponent(FIELDS) + '&supportsAllDrives=true';
       var mime = t.mime || 'audio/wav';
@@ -10499,7 +10503,6 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
 /* ---------- m3.7: read-only list of VideoBot status files (never writes) ---------- */
   var STATUS_FOLDER = '1JkplywPuY1HmqKz5RvsIt-iJKlG1l493';
   function listStatusFolder() {
-    return Promise.resolve([]);
     var tok = token();
     if (!tok) return Promise.reject(err('signin', 'Status not available yet'));
     var base = (window.VBVVideoStatus && VBVVideoStatus.listUrl) ? VBVVideoStatus.listUrl(STATUS_FOLDER)
@@ -10517,27 +10520,7 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
     });
   }
 
-  function listInboxFiles() {
-    var tok = token();
-    if (!tok) return Promise.reject(err('signin', 'Sign in to list 00 Inbox'));
-    if (!INBOX) return Promise.resolve([]);
-    var base = 'https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent("'" + INBOX + "' in parents and trashed = false") +
-      '&fields=' + encodeURIComponent('nextPageToken,files(id,name,modifiedTime,sha256Checksum)') + '&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true';
-    function page(pageToken, acc) {
-      var url = base + (pageToken ? (base.indexOf('?') >= 0 ? '&' : '?') + 'pageToken=' + encodeURIComponent(pageToken) : '');
-      return call('GET', url, tok).then(json).then(function (j) {
-        var files = acc.concat(j.files || []);
-        return j.nextPageToken ? page(j.nextPageToken, files) : files;
-      });
-    }
-    return page(null, []).catch(function (e) {
-      // Never create 00 Inbox or any other folder if the listing fails.
-      throw err(e.kind || 'http', 'Could not list 00 Inbox', { status: e.status, reason: e.reason });
-    });
-  }
-
   function readStatusFile(id) {
-    return Promise.resolve(null);
     var tok = token();
     if (!tok || !id) return Promise.resolve(null);
     return call('GET', API + '/' + encodeURIComponent(id) + '?alt=media', tok).then(function (r) { return r.text(); }).then(function (t) {
@@ -10548,7 +10531,7 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
     KJB.on('google-token', function () { badToken = null; notifyAuth(); });
     KJB.on('google-token-cleared', function () { notifyAuth(); });
   }
-  window.VBVDrive = { createStorage: createStorage, signInAgain: signInAgain, pickInbox: pickInbox, inboxGranted: inboxGranted, tokenOk: tokenOk, authState: authState, onAuthChange: onAuthChange, INBOX: INBOX, ROOT: ROOT, PICK_KEY: PICK_KEY, listStatusFolder: listStatusFolder, listInboxFiles: listInboxFiles, readStatusFile: readStatusFile, STATUS_FOLDER: STATUS_FOLDER };
+  window.VBVDrive = { createStorage: createStorage, signInAgain: signInAgain, pickInbox: pickInbox, inboxGranted: inboxGranted, tokenOk: tokenOk, authState: authState, onAuthChange: onAuthChange, INBOX: INBOX, ROOT: ROOT, PICK_KEY: PICK_KEY, listStatusFolder: listStatusFolder, readStatusFile: readStatusFile, STATUS_FOLDER: STATUS_FOLDER };
 
 })();
 
@@ -10629,10 +10612,9 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
   function makeInner(opts) {
     opts = opts || {};
     var s;
-    // Test: upload each verse WAV into 00 Inbox, same as live. Never create a Drive folder.
-    if (window.VBVDrive && !opts.fake) {
+    if (window.VBVDrive && !opts.fake) { // m3.4 (Robin 20:48): real Drive save into 00 Inbox (vbv-drive.js); background upload, retakes overwrite the same fileId
       s = VBVDrive.createStorage(Object.assign({ refOf: R.refOf }, opts)); s.onVerseSaved(onSaved);
-    } else { s = R.createMemoryStorage(Object.assign({ delay: 0, retryDelayMs: 5000, maxAutoRetries: 0 }, opts)); s.onVerseSaved = onSaved; }
+    } else { s = R.createMemoryStorage(Object.assign({ delay: 700, retryDelayMs: 5000, maxAutoRetries: 2 }, opts)); s.onVerseSaved = onSaved; }
     s.onQueueChange(function () { pushSaveStates(); qListeners.forEach(function (f) { try { f(); } catch (e) {} }); if (VBV.driveBanner) VBV.driveBanner(); if (typeof showStitchStrip === 'function') showStitchStrip(); });
     return s;
   }
@@ -10647,7 +10629,7 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
     get fileIds() { return inner.fileIds; }, get files() { return inner.files; }, get kind() { return inner.kind || 'm3-local-fake'; },
     fileIdOf: function (id) { return inner.fileIdOf ? inner.fileIdOf(id) : (inner.fileIds && inner.fileIds.get(id)) || null; },
     needsSignIn: function () { return inner.needsSignIn ? inner.needsSignIn() : false; },
-    saveStitchRequest: function (spec) { return Promise.reject(new Error('TEST VERSION: stitch requests are not written, and nothing is sent to Drive.')); },
+    saveStitchRequest: function (spec) { return Promise.reject(new Error('TEST VERSION: stitch requests are not written.')); },
     savePassage: function (file, wav) { return inner.savePassage ? inner.savePassage(file, wav) : Promise.reject(new Error('Saving needs Google Drive')); },
     stitchQueue: function () { return inner.stitchQueue ? inner.stitchQueue() : []; },
     stop: function () {} // a unit switch or tab change never stops the upload queue
@@ -10852,7 +10834,7 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
   var connecting = false;
   function connectDrive() {
     if (!window.VBVDrive || connecting) return; connecting = true; driveBanner('Connecting to Google Drive\u2026');
-    VBVDrive.signInAgain().then(function () { connecting = false; storage.retry(); driveBanner(); if (window.VBV && VBV.refreshInboxOffer) VBV.refreshInboxOffer(); },
+    VBVDrive.signInAgain().then(function () { connecting = false; storage.retry(); driveBanner(); },
       function (e) { connecting = false; driveBanner(e && e.kind === 'cancel' ? 'No folder chosen. Tap Connect Google Drive and choose 00 Inbox.' : (e && e.message) || 'Google Drive did not connect. Try again.'); });
   }
   VBV.connectDrive = connectDrive;
@@ -10921,7 +10903,7 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
           if (h.retake && (prev.st | 0) >= 2) { var u = (VBVStages.doc().units || {})[stem] || {}; VBVStages.setUnit(stem, Object.assign({}, u, { restitch: true })); }
         },
         onUnitComplete: function (info) { VBVStages.localStitch(info.stem, { state: 'all-recorded', pending: info.pending.length, failed: info.failed.length }); },
-        onStitchNow: function () { // TEST: never write a stitch-request or upload to Drive
+        onStitchNow: function () { // TEST: never write a stitch-request
           if (!unitCur) return;
           var ready = stitchReadiness(); if (!ready.ready) { updateStitchNow(); return; }
           return;
@@ -11008,198 +10990,52 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
     return box;
   }
 
-  function unitLabelOfId(id) {
-    try { if (window.VBVRec && VBVRec.unitStemOfId) return VBVRec.unitStemOfId(id); } catch (e) {}
-    var m = /^([1-3]?[A-Z]{2,3})\.(\d+)\.(\d+)$/.exec(String(id || ''));
-    if (!m) return null;
-    var DM = window.DotsMap, b = null;
-    if (DM && DM.BOOKS) DM.BOOKS.forEach(function (x) { if (x.code === m[1]) b = x; });
-    var name = b ? (b.code === 'PSA' ? 'Psalm' : b.name) : m[1];
-    return name + ' ' + m[2];
-  }
-  function chapterTotal(unit) {
-    var DM = window.DotsMap; if (!DM || !DM.BOOKS) return 0;
-    var found = 0;
-    DM.BOOKS.forEach(function (b) {
-      var disp = b.code === 'PSA' ? 'Psalm' : b.name;
-      if (unit === b.name && (b.short || b.chapters === 1)) found = b.counts[0] || 0;
-      for (var c = 1; c <= b.chapters; c++) if (unit === disp + ' ' + c) found = b.counts[c - 1] || 0;
-    });
-    return found;
-  }
-  function loadLocalTakes() {
-    if (!window.indexedDB || !window.VBVRec || !VBVRec.Store) return Promise.resolve([]);
-    try {
-      return new VBVRec.Store().all('takes').then(function (rows) {
-        return (rows || []).filter(function (t) { return t && t.status === 'accepted' && t.verseId; });
-      }).catch(function () { return []; });
-    } catch (e) { return Promise.resolve([]); }
-  }
-  function stageVerseIds() {
-    var ids = [];
-    if (!window.VBVStages || !VBVStages.each) return ids;
-    try {
-      VBVStages.each(function (id, rec) { if (id && rec && (rec.st | 0) >= 1) ids.push(id); });
-    } catch (e) {}
-    return ids;
-  }
-  function listInboxWavs() {
-    if (!window.VBVDrive || !VBVDrive.listInboxFiles) return Promise.resolve({ files: [], error: 'none' });
-    return VBVDrive.listInboxFiles().then(function (files) { return { files: files || [], error: null }; }, function (e) {
-      return { files: [], error: (e && e.kind) || 'unavailable' };
-    });
-  }
-  function inboxVerseId(file) {
-    var name = file && file.name;
-    if (!name) return null;
-    try { if (window.VBVRec && VBVRec.parseVerseFileName) return VBVRec.parseVerseFileName(name); } catch (e) {}
-    return null;
-  }
-  function buildRows(localTakes, stageIds, inboxFiles) {
-    var units = {};
-    function ensure(label) {
-      return units[label] || (units[label] = { unit: label, local: {}, inbox: {} });
-    }
-    function add(label, side, vid) {
-      if (!label || !vid) return;
-      ensure(label)[side][vid] = true;
-    }
-    (localTakes || []).forEach(function (t) { add(unitLabelOfId(t.verseId), 'local', t.verseId); });
-    (stageIds || []).forEach(function (id) { add(unitLabelOfId(id), 'local', id); });
-    (inboxFiles || []).forEach(function (f) {
-      var id = inboxVerseId(f);
-      if (id) add(unitLabelOfId(id), 'inbox', id);
-    });
-    var order = [];
-    if (window.DotsMap && DotsMap.BOOKS) {
-      DotsMap.BOOKS.forEach(function (b) {
-        var disp = b.code === 'PSA' ? 'Psalm' : b.name;
-        if (units[b.name]) order.push(b.name);
-        for (var c = 1; c <= b.chapters; c++) { var u = disp + ' ' + c; if (units[u]) order.push(u); }
-      });
-    } else {
-      order = Object.keys(units).sort();
-    }
-    return order.map(function (u) {
-      var r = units[u], localN = Object.keys(r.local).length, inboxN = Object.keys(r.inbox).length, total = chapterTotal(u);
-      var bits = [];
-      if (localN) bits.push(total ? (localN + ' of ' + total + ' verses on this iPad') : (localN + (localN === 1 ? ' verse' : ' verses') + ' on this iPad'));
-      if (inboxN) bits.push(inboxN + (inboxN === 1 ? ' verse' : ' verses') + ' in 00 Inbox');
-      else if (localN) bits.push('not yet in 00 Inbox');
-      return { unit: u, localN: localN, inboxN: inboxN, total: total, label: bits.join(' \u00b7 ') };
-    });
-  }
-  function collectUnsent(localTakes, inboxFiles) {
-    var inInbox = {};
-    (inboxFiles || []).forEach(function (f) { var id = inboxVerseId(f); if (id) inInbox[id] = true; });
-    var q = {};
-    try {
-      var stor = window.VBV && VBV.recStorage && VBV.recStorage();
-      if (stor) {
-        if (stor.queue) stor.queue().forEach(function (it) { if (it && it.id && (it.state === 'saving' || it.state === 'saved')) q[it.id] = it.state; });
-        (localTakes || []).forEach(function (t) { if (stor.fileIdOf && stor.fileIdOf(t.verseId)) q[t.verseId] = 'saved'; });
-      }
-    } catch (e) {}
-    return (localTakes || []).filter(function (t) {
-      if (!t || !t.verseId || !t.wav) return false;
-      if (inInbox[t.verseId]) return false;
-      if (q[t.verseId] === 'saved' || q[t.verseId] === 'saving') return false;
-      return true;
-    });
-  }
-  function sendUnsentToInbox() {
-    var btn = document.querySelector('.vbv-status-offer-btn');
-    if (btn) { btn.disabled = true; btn.textContent = 'Sending\u2026'; }
-    return loadLocalTakes().then(function (takes) {
-      return listInboxWavs().then(function (inbox) {
-        var unsent = collectUnsent(takes, inbox.files);
-        var stor = window.VBV && VBV.recStorage && VBV.recStorage();
-        if (!stor || !stor.saveVerse) return Promise.reject(new Error('Saving needs Google Drive'));
-        var jobs = unsent.map(function (t) {
-          var gateOverall = t.checks && t.checks && (window.VBVRec && VBVRec.gateLabelForSave ? VBVRec.gateLabelForSave(t.checks) : 'PASS');
-          return stor.saveVerse(t.verseId, t.wav, {
-            file: t.fileName || (VBVRec.verseFileNameOfId && VBVRec.verseFileNameOfId(t.verseId)),
-            take_at: t.meta && t.meta.take_at,
-            gate: { overall: gateOverall || 'PASS', checks: t.checks || {} }
-          });
-        });
-        return Promise.all(jobs).then(function () { return unsent.length; });
-      });
-    }).finally(function () { if (btn) { btn.disabled = false; btn.textContent = 'Send to 00 Inbox'; } });
-  }
-  function paintOffer(unsent, inboxError, signedIn) {
-    var box = ensurePanel(); if (!box) return;
-    var offer = box.querySelector('.vbv-status-offer');
-    if (!offer) {
-      offer = document.createElement('div'); offer.className = 'vbv-status-offer';
-      var offerMsg = document.createElement('p'); offerMsg.className = 'kjb-muted vbv-status-offer-msg';
-      var offerBtn = document.createElement('button'); offerBtn.type = 'button'; offerBtn.className = 'kjb-second vbv-status-offer-btn'; offerBtn.textContent = 'Send to 00 Inbox';
-      offerBtn.addEventListener('click', function () {
-        sendUnsentToInbox().then(function () { return load(true); }).then(function () { render(); }, function () { render(); });
-      });
-      offer.appendChild(offerMsg); offer.appendChild(offerBtn);
-      var list = box.querySelector('.vbv-status-list');
-      box.insertBefore(offer, list);
-    }
-    var msg = offer.querySelector('.vbv-status-offer-msg');
-    var btn = offer.querySelector('.vbv-status-offer-btn');
-    var n = (unsent || []).length;
-    if (!n) { offer.hidden = true; return; }
-    offer.hidden = false;
-    if (!signedIn) {
-      msg.textContent = n === 1 ? '1 verse recorded on this iPad is not yet in 00 Inbox. Connect Google Drive to send it.' : (n + ' verses recorded on this iPad are not yet in 00 Inbox. Connect Google Drive to send them.');
-      btn.hidden = true;
-    } else {
-      msg.textContent = n === 1 ? '1 verse recorded on this iPad is not yet in 00 Inbox.' : (n + ' verses recorded on this iPad are not yet in 00 Inbox.');
-      btn.hidden = false;
-    }
-  }
-
   function render() {
     var box = ensurePanel(); if (!box) return;
     var msg = box.querySelector('.vbv-status-msg'), list = box.querySelector('.vbv-status-list');
     list.textContent = '';
-    var rows = cache.rows || [];
-    var signedIn = !!(window.VBVDrive && VBVDrive.tokenOk && VBVDrive.tokenOk());
-    paintOffer(cache.unsent || [], cache.inboxError, signedIn && !!(VBVDrive.inboxGranted && VBVDrive.inboxGranted()));
-    if (!rows.length) {
-      msg.hidden = false; list.hidden = true;
-      if (!signedIn) msg.textContent = 'No verses recorded on this iPad yet. Connect Google Drive to also list 00 Inbox.';
-      else if (cache.inboxError && cache.inboxError !== 'none') msg.textContent = 'No verses recorded on this iPad yet, and 00 Inbox could not be listed.';
-      else msg.textContent = 'No verses recorded on this iPad yet, and none seen in 00 Inbox.';
-      return;
+    if (cache.error || !cache.files) {
+      msg.hidden = false; msg.textContent = 'Status not available yet'; list.hidden = true; return;
     }
+    var map = VS.statusFromFiles(cache.files, bookOrder());
+    var names = Object.keys(map);
+    if (window.DotsMap && DotsMap.BOOKS) {
+      var order = [];
+      DotsMap.BOOKS.forEach(function (b) {
+        var disp = b.code === 'PSA' ? 'Psalm' : b.name;
+        if (map[b.name]) order.push(b.name);
+        for (var c = 1; c <= b.chapters; c++) { var u = disp + ' ' + c; if (map[u]) order.push(u); }
+      });
+      names = order;
+    }
+    if (!names.length) { msg.hidden = false; msg.textContent = 'No chapter status yet.'; list.hidden = true; return; }
     msg.hidden = true; list.hidden = false;
-    rows.forEach(function (r) {
+    names.forEach(function (unit) {
       var li = document.createElement('li'); li.className = 'vbv-status-row';
-      var n = document.createElement('span'); n.className = 'vbv-status-unit'; n.textContent = r.unit;
-      var st = document.createElement('span'); st.className = 'vbv-status-state'; st.textContent = r.label;
+      var n = document.createElement('span'); n.className = 'vbv-status-unit'; n.textContent = unit;
+      var st = document.createElement('span'); st.className = 'vbv-status-state';
+      var lab = VS.progressLabel(map[unit].status);
+      if (map[unit].status === 'held') {
+        lab = 'Held: please check';
+        var miss = map[unit].missingVerses || [];
+        if (miss.length) lab += ' \u00b7 ' + miss.join(', ');
+      }
+      st.textContent = lab;
       li.appendChild(n); li.appendChild(st); list.appendChild(li);
     });
   }
 
   function load(force) {
-    if (!force && cache.rows && !cache.error) return Promise.resolve(cache);
+    if (!force && cache.files && !cache.error) return Promise.resolve(cache);
     cache.error = null;
-    return Promise.all([loadLocalTakes(), listInboxWavs()]).then(function (parts) {
-      var takes = parts[0] || [];
-      var inbox = parts[1] || { files: [], error: 'none' };
-      var stages = stageVerseIds();
-      cache.rows = buildRows(takes, stages, inbox.files);
-      cache.unsent = collectUnsent(takes, inbox.files);
-      cache.inboxError = inbox.error;
-      cache.files = inbox.files;
-      cache.error = null;
-      cache.at = Date.now();
-      return cache;
-    }).catch(function () {
-      cache.rows = buildRows([], stageVerseIds(), []);
-      cache.unsent = [];
-      cache.inboxError = 'unavailable';
-      cache.files = [];
-      cache.error = null;
-      return cache;
-    });
+    if (!window.VBVDrive || !VBVDrive.listStatusFolder) { cache.error = 'unavailable'; cache.files = null; return Promise.resolve(cache); }
+    return VBVDrive.listStatusFolder().then(function (files) {
+      files = files || [];
+      var held = files.filter(function (f) { var p = VS.parseStatusName(f.name, bookOrder()); return p && p.status === 'held' && f.id && VBVDrive.readStatusFile; });
+      return Promise.all(held.map(function (f) {
+        return VBVDrive.readStatusFile(f.id).then(function (j) { f.missingVerses = VS.missingVersesFromStatus ? VS.missingVersesFromStatus(j) : []; });
+      })).then(function () { cache.files = files; cache.error = null; cache.at = Date.now(); return cache; });
+    }, function () { cache.files = null; cache.error = 'unavailable'; return cache; });
   }
 
   function show() {
@@ -11210,10 +11046,6 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
   var tabBtn = document.getElementById('kjbtab-stitch');
   if (tabBtn) tabBtn.textContent = 'Progress';
   if (window.KJB && KJB.on) KJB.on('tab', function (t) { if (t === 'stitch') show(); });
-  if (window.VBV) {
-    VBV.refreshInboxOffer = function () { return load(true).then(function () { render(); return cache; }); };
-    VBV.sendUnsentToInbox = sendUnsentToInbox;
-  }
 })();
 
 </script>
