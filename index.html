@@ -1548,9 +1548,9 @@ html {
 #vbvRecMount.vbvr-fixed > .vbv-root { flex: 1 1 auto; min-height: 0; height: auto; }
 #vbvRecMount.vbvr-fixed > .vbvr-bar { padding-bottom: 8px; }
 @media (max-width: 600px) {
-  /* phone: the bar is pinned at the bottom while the page scrolls; Record + Stop side by side, Re-record under them */
+  /* phone: the bar is pinned at the bottom while the page scrolls; Record/Stop toggle on the first row, Re-record under it */
   #vbvRecMount .vbvr-bar { position: sticky; bottom: 0; z-index: 3; flex-wrap: wrap; gap: 10px; padding: 10px 0 max(10px, env(safe-area-inset-bottom, 0px)); margin-top: 8px; box-shadow: 0 -2px 0 0 #333; }
-  #vbvRecMount .vbvr-bar .vbvr-b-rec, #vbvRecMount .vbvr-bar .vbvr-b-stop { flex: 1 1 calc(50% - 5px); }
+  #vbvRecMount .vbvr-bar .vbvr-b-rec { flex: 1 1 100%; }
   #vbvRecMount .vbvr-bar .vbvr-b-re { flex: 1 1 100%; }
   /* header only: the save strip goes on its own line under the reference, so it never covers "Genesis 1:2" or "2 of 31" */
   #vbvRecMount .vbv-verse-head { flex-wrap: wrap; row-gap: 8px; align-items: flex-start; }
@@ -10741,16 +10741,26 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
   stitchObs.observe(mountEl, { childList: true, subtree: true });
 
 
-  // ---------- m3.3 (Robin 20:41): Record, Stop and Re-record always shown together ----------
-  // One bar under KJBVR's screen (outside its repainted root, so a tap is never lost to a repaint). Buttons that can't act now are
-  // greyed but stay. Stop saves (autoSave). Re-record = go back to the verse Stop last saved and record it at once; its Stop saves it
-  // over the same file (retake) and moves on again. KJBVR's own Record / Stop / Record again buttons are hidden by CSS.
+  // ---------- Record/Stop is one toggle, with Re-record beside it ----------
+  // One bar under KJBVR's screen (outside its repainted root, so a tap is never lost to a repaint). The same button is Record when
+  // idle and Stop while a take is running. Stop saves (autoSave). Re-record = go back to the verse Stop last saved and record it at
+  // once; its Stop saves it over the same file (retake) and moves on again. KJBVR's own Record / Stop / Record again buttons stay hidden by CSS.
   var justSaved = null; // verse id saved by the last Stop
   var bar = document.createElement('div'); bar.className = 'vbvr-bar'; bar.setAttribute('role', 'group'); bar.setAttribute('aria-label', 'Recording');
   function mk(cls, txt) { var b = document.createElement('button'); b.type = 'button'; b.className = 'vbv-btn ' + cls; if (txt) b.textContent = txt; bar.appendChild(b); return b; }
-  var bRec = mk('vbv-btn-danger vbvr-b-rec', ''), bStop = mk('vbv-btn-primary vbvr-b-stop', 'Stop'), bRe = mk('vbv-btn-secondary vbvr-b-re vbvr-rerec', '');
-  var dot = document.createElement('span'); dot.className = 'vbv-rec-dot'; dot.setAttribute('aria-hidden', 'true'); bRec.appendChild(dot); bRec.appendChild(document.createTextNode(' Record'));
+  var bToggle = mk('vbv-btn-danger vbvr-b-rec', ''), bRe = mk('vbv-btn-secondary vbvr-b-re vbvr-rerec', '');
+  var dot = document.createElement('span'); dot.className = 'vbv-rec-dot'; dot.setAttribute('aria-hidden', 'true');
+  var bLab = document.createElement('span'); bLab.className = 'vbv-btn-label'; bLab.textContent = 'Record';
+  bToggle.appendChild(dot); bToggle.appendChild(bLab);
+  bToggle.setAttribute('aria-pressed', 'false');
   function setDis(b, d) { if (b.disabled !== d) { b.disabled = d; b.setAttribute('aria-disabled', String(d)); } }
+  function paintToggle(recording) {
+    bLab.textContent = recording ? 'Stop' : 'Record';
+    bToggle.setAttribute('aria-label', recording ? 'Stop' : 'Record');
+    bToggle.setAttribute('aria-pressed', recording ? 'true' : 'false');
+    bToggle.classList.toggle('is-recording', !!recording);
+    if (recording) dot.classList.add('vbv-rec-dot-pulse'); else dot.classList.remove('vbv-rec-dot-pulse');
+  }
   // m3.6: the verse panel scrolls by touch; a 'More of this verse below' cue (an overlay, takes no space) shows until the end is reached
   function verseScroll() {
     var pn = mountEl.querySelector('.vbv-verse-panel'); if (!pn) return;
@@ -10769,9 +10779,10 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
     if (!r || !root) { bar.hidden = true; return; }
     if (bar.parentNode !== mountEl || bar.previousElementSibling !== root) mountEl.appendChild(bar);
     bar.hidden = false;
-    var st = r.state, screen = root.dataset.screen, busy = st === 'RECORDING' || st === 'STARTING' || st === 'PROCESSING' || st === 'SAVING';
-    setDis(bRec, busy); // m3.5: greyed only while a take is recording or being saved
-    setDis(bStop, st !== 'RECORDING');
+    var st = r.state, screen = root.dataset.screen, busy = st === 'STARTING' || st === 'PROCESSING' || st === 'SAVING';
+    var recording = st === 'RECORDING';
+    paintToggle(recording);
+    setDis(bToggle, busy); // greyed only while a take is starting or being saved; Stop stays live while recording
     var have = !!(justSaved && r.ids.indexOf(justSaved) >= 0);
     var lab = have ? R.refOf(justSaved) : null;
     if (bRe.dataset.id !== (have ? justSaved : '')) {
@@ -10782,8 +10793,10 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
     setDis(bRe, !have || busy);
     root.classList.add('vbvr-has-bar');
   }
-  bRec.addEventListener('click', function () { var r = handle && handle.recorder; if (r && !bRec.disabled) r.record(); });
-  bStop.addEventListener('click', function () { var r = handle && handle.recorder; if (r && !bStop.disabled) r.stop(); });
+  bToggle.addEventListener('click', function () {
+    var r = handle && handle.recorder; if (!r || bToggle.disabled) return;
+    if (r.state === 'RECORDING') r.stop(); else r.record();
+  });
   bRe.addEventListener('click', function () { var r = handle && handle.recorder, id = bRe.dataset.id; if (!r || bRe.disabled || !id || isBusy()) return;
     try { r.goTo(id); } catch (x) { return; } r.record(); });
   new MutationObserver(function (m) { if (m.some(function (x) { return x.target !== bar && !bar.contains(x.target); })) updateBar(); }).observe(mountEl, { childList: true, subtree: true });
