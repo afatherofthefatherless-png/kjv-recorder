@@ -2486,7 +2486,7 @@ async function generate() {
 }
 
 // "Mark as covered": opens the Bible Coverage Tracker with this passage ticked (the browser keeps the two sites' data apart, so it has to open there)
-const TRACKER_URL = 'https://afatherofthefatherless-png.github.io/kjv-recorder/';
+const TRACKER_URL = 'https://afatherofthefatherless-png.github.io/kjv-recorder/recorder/';
 let coveredRef = '', titleText = '';
 function videoTitle() { const t = titleText || coveredRef; return t ? t.charAt(0).toUpperCase() + t.slice(1) : ''; } // e.g. "Genesis 1:1-5", for the YouTube title
 // The featured verse for the YouTube description is a field you can change; the last one you used is remembered on this device
