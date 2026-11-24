@@ -2,7 +2,7 @@
 // Diff, normalisation and filters are a faithful port of VideoBot's
 // /workspace/chapter-pipeline/align/align_unit.py (source lines cited below),
 // plus recorder-only near-miss, prompt, early-cutoff retry, and trailing-closer rules.
-// Recognition is in-browser Whisper (transformers.js, quantised q8).
+// Recognition is in-browser Whisper (transformers.js, tiny.en, quantised q8). One light listen.
 // The check only flags. It never blocks recording, Save, or hardFail.
 
 const ARCHAIC = { // align_unit.py:24-42
@@ -76,8 +76,8 @@ export const WHISPER_EN = {
 };
 
 const TRANSFORMERS_URL = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.2";
-const MODEL_ID = "Xenova/whisper-base.en";
-const CACHE_KEY = "vbv.wordCheck.modelReady.v1";
+const MODEL_ID = "Xenova/whisper-tiny.en";
+const CACHE_KEY = "vbv.wordCheck.modelReady.tiny.v1";
 const EARLY_GAP_S = 1.25;
 const TAIL_OVERLAP_S = 0.5;
 
@@ -134,22 +134,45 @@ const NEAR = {
 };
 
 function stemInfl(s) {
-  const endings = ["iced", "eth", "est", "ied", "ed", "st"];
+  const endings = ["iced", "ess", "eth", "est", "ies", "ied", "ing", "ed", "es", "ly", "st", "s"];
   for (const end of endings) {
-    if (s.length - end.length >= 4 && s.endsWith(end)) return s.slice(0, -end.length);
+    if (s.length - end.length >= 3 && s.endsWith(end)) {
+      if (end === "s" && s.endsWith("ss")) continue;
+      if (end === "ies") return s.slice(0, -3) + "y";
+      return s.slice(0, -end.length);
+    }
   }
   return s;
 }
+
+function rstripPlural(s) {
+  if (s.length >= 5 && s.endsWith("ies")) return s.slice(0, -3) + "y";
+  if (s.length >= 5 && s.endsWith("ess")) return s.slice(0, -3);
+  if (s.length >= 4 && s.endsWith("es")) return s.slice(0, -2);
+  if (s.length >= 4 && s.endsWith("s") && !s.endsWith("ss")) return s.slice(0, -1);
+  return s;
+}
+
+// Common homophones / particles the mic often confuses. These count as a match.
+const HOMOPHONE = {
+  two: 1, too: 1, to: 1,
+  four: 2, for: 2, fore: 2,
+  there: 3, their: 3, theyre: 3,
+  here: 4, hear: 4,
+  no: 5, know: 5,
+  one: 6, won: 6,
+  son: 7, sun: 7,
+  by: 8, bye: 8, buy: 8,
+};
 
 function isCapped(tok) {
   const s = String(tok || "").replace(/^[^A-Za-z]+/, "");
   return /^[A-Z]/.test(s);
 }
 
-export function equiv(a, b) { // align_unit.py:83-96, plus near-miss
+export function equiv(a, b) { // light check: similar words and variants count as a match
   if (!a || !b) return false;
   if (a === b) return true;
-  // rstripS is deliberately not used: "hand" vs "hands" is a real slip.
   const sa = ARCHAIC[a] || new Set([a]);
   const sb = ARCHAIC[b] || new Set([b]);
   let inter = false;
@@ -157,15 +180,15 @@ export function equiv(a, b) { // align_unit.py:83-96, plus near-miss
   if (inter || sb.has(a) || sa.has(b)) return true;
   const na = NEAR[a], nb = NEAR[b];
   if ((na && na.has(b)) || (nb && nb.has(a))) return true;
-  // One-letter ASR typo on longer content words only. Function words stay
-  // strict so then/than, that/than and similar slips are flagged.
-  if (!FUNC.has(a) && !FUNC.has(b) && Math.min(a.length, b.length) >= 5 && editDistance(a, b) <= 1) return true;
+  if (HOMOPHONE[a] && HOMOPHONE[a] === HOMOPHONE[b]) return true;
+  const pa = rstripPlural(a), pb = rstripPlural(b);
+  if (pa === pb) return true;
+  const n = Math.min(a.length, b.length);
+  if (n >= 5 && editDistance(a, b) <= 2) return true;
+  if (n >= 4 && editDistance(a, b) <= 1) return true;
   const sta = stemInfl(a), stb = stemInfl(b);
-  if (sta !== a || stb !== b) {
-    if (sta && stb && (sta === stb || (Math.min(sta.length, stb.length) >= 4 && editDistance(sta, stb) <= 1))) return true;
-  }
-  // Longer d<=2 (observe/deserve) is NOT accepted here. Proper-name slips
-  // such as Amittai/Amatai are handled in equivTokens via capitalisation.
+  if (sta && stb && (sta === stb || (Math.min(sta.length, stb.length) >= 4 && editDistance(sta, stb) <= 1))) return true;
+  if (pa && pb && pa !== a && pb !== b && editDistance(pa, pb) <= 1) return true;
   return false;
 }
 
@@ -397,12 +420,14 @@ export function flagOps(ops, kjv, asr, verseConf) { // align_unit.py flag_ops, p
       if (sameWordForm(kn, an)) continue;
       if (archaicEquiv(kn, an) || (kj != null && isUnusualKjv(kj, kjv, i) && kn !== an)) kind = "archaic";
       else continue;
-    } else if (kind === "sub") {
-      if (sameWordForm(kn, an)) continue;
-      if (archaicEquiv(kn, an) || (kj != null && isUnusualKjv(kj, kjv, i) && kn !== an)) kind = "archaic";
-      else kind = "swap";
+    } else if (kind === "sub" || kind === "swap") {
+      // A similar or misheard word is a match. Only added or missing words are flagged.
+      continue;
+    } else if (kind === "archaic") {
+      continue;
     }
-    // missing / extra (including small words) stay as-is.
+    if (kind !== "missing" && kind !== "extra" && kind !== "ins" && kind !== "del") continue;
+    // missing / extra stay as-is.
     let wp = null;
     if (j != null) wp = asrProb(asr[j]);
     let conf = "high";
@@ -962,7 +987,7 @@ async function transcribePcm(transcriber, pcm, prompt, callOpts = {}) {
     condition_on_previous_text: false,
     temperature: 0,
     do_sample: false,
-    num_beams: callOpts.numBeams != null ? callOpts.numBeams : 5,
+    num_beams: callOpts.numBeams != null ? callOpts.numBeams : 1,
     // Model default forced_decoder_ids pins <|notimestamps|> at index 1, which
     // would break both word timestamps and a prepended startofprev prompt.
     forced_decoder_ids: null,
@@ -1238,8 +1263,18 @@ export async function checkAudio(wav, text, callOpts = {}) {
   // Coordinate the one listen: bias names/archaic forms, but do not feed the
   // whole verse as a script to recite (that hid real missing/swapped words).
   const mainPrompt = callOpts.promptText != null ? callOpts.promptText : vocabPrompt(kjvText);
-  let pass = await transcribePcm(transcriber, audio, mainPrompt, callOpts);
-  let words = pass.words;
+  // Transcribe only the speech, not the quiet lead-in/tail (faster on iPad).
+  const pad = Math.round(0.15 * 16000);
+  const i0 = Math.max(0, Math.floor((speech.start || 0) * 16000) - pad);
+  const i1 = Math.min(audio.length, Math.ceil((speech.end || (audio.length / 16000)) * 16000) + pad);
+  const clip = audio.subarray(i0, Math.max(i0 + 1, i1));
+  const clipOffset = i0 / 16000;
+  let pass = await transcribePcm(transcriber, clip, mainPrompt, callOpts);
+  let words = pass.words || [];
+  for (const w of words) {
+    if (w && w.start != null) w.start += clipOffset;
+    if (w && w.end != null) w.end += clipOffset;
+  }
   let retried = false;
   const overlap = callOpts.overlapS != null ? callOpts.overlapS : TAIL_OVERLAP_S;
 
@@ -1250,8 +1285,8 @@ export async function checkAudio(wav, text, callOpts = {}) {
     words = mergeTail(words, tail.words, offset, overlap);
   };
 
-  // Cheap cut-off handling: only re-run the uncovered tail when coverage is clearly short.
-  if (isEarlyCutoff(words, speech, kjvText)) {
+  // Light check: one listen only, unless the caller asks for a tail retry.
+  if (callOpts.retryTail && isEarlyCutoff(words, speech, kjvText)) {
     const lastT = lastAsrTime(words) ?? (speech.start + (words.length / Math.max(1, tokensOf(kjvText).length)) * (speech.end - speech.start));
     const tailStart = Math.max(0, Math.min(speech.end - 0.6, lastT - overlap));
     const i0 = Math.max(0, Math.floor(tailStart * 16000));
@@ -1263,8 +1298,8 @@ export async function checkAudio(wav, text, callOpts = {}) {
   let verifyFlags = [];
   let secondPass = false;
   let doubtReasons = firstPassDoubt(checked, words, speech, kjvText);
-  // Always run both listens in the background unless the caller opts out.
-  if (callOpts.verify !== false) {
+  // A second listen is opt-in. The live recorder uses one light pass.
+  if (callOpts.verify) {
     secondPass = true;
     try { if (onStatus) onStatus("checking-again"); } catch {}
     const verifyPass = await transcribePcm(transcriber, audio, "King James Bible.", { ...callOpts, prompt: true });

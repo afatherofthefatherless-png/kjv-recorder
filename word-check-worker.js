@@ -47,6 +47,8 @@ async function runJob(job) {
       flags: [],
       error: String(err && err.message || err),
     });
+  } finally {
+    job.wav = null;
   }
 }
 

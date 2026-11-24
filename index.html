@@ -1366,12 +1366,8 @@ html {
   min-height: calc(38 * var(--scale) * 1px);
   font-size: max(22px, var(--fs-28));
 }
-.vbv-gate-row[data-word-alert="1"] {
-  grid-template-columns: max(72px, calc(140 * var(--scale) * 1px)) auto;
-  row-gap: 0.35em;
-}
-.vbv-gate-row[data-word-alert="1"] .vbv-gate-reason {
-  grid-column: 1 / -1;
+.vbv-gate-row .vbv-gate-reason {
+  min-height: 1.35em;
 }
 
 .vbv-gate-ref { font-weight: var(--font-weight-bold); color: var(--color-fg); }
@@ -1466,18 +1462,28 @@ html {
 .vbv-gate-row-actions {
   grid-column: 1 / -1;
   display: flex;
+  flex-direction: row;
   flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 0.4em;
+  align-items: center;
+  gap: 8px;
+  margin-top: 0.25em;
+  min-height: 44px;
+  height: 44px;
+  overflow: hidden;
 }
 .vbv-gate-row-actions .vbv-btn {
-  flex: 1 1 auto;
-  min-height: 48px;
-  min-width: 48px;
-  padding: 8px 14px;
+  flex: 0 0 auto;
+  width: auto;
+  height: 44px;
+  min-height: 44px;
+  max-height: 44px;
+  min-width: 44px;
+  padding: 0 12px;
   font-family: var(--font-ui);
-  font-size: max(18px, var(--fs-28));
+  font-size: 16px;
   font-weight: var(--font-weight-bold);
+  line-height: 1;
+  white-space: nowrap;
 }
 .vbv-gate-row-actions .vbv-btn.is-playing { border-width: 3px; }
 .vbv-stitch-actions {
@@ -1599,37 +1605,46 @@ html {
 
 
 .vbv-fail-card {
-  margin: 0 0 16px;
-  padding: 16px;
-  border: 3px solid #ffffff;
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border: 2px solid #ffffff;
   background: #000000;
   color: #ffffff;
   font-family: 'OpenDyslexic', var(--font-ui, system-ui, sans-serif);
 }
 .vbv-fail-line,
 .vbv-fail-context {
-  margin: 0 0 12px;
-  font-size: max(28px, var(--fs-28, 28px));
+  margin: 0 0 8px;
+  font-size: max(18px, 1em);
   font-weight: 700;
-  line-height: 1.35;
+  line-height: 1.3;
   color: #ffffff;
 }
 .vbv-fail-actions {
   display: flex;
-  flex-direction: column;
-  gap: 12px;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   width: 100%;
+  min-height: 44px;
+  height: 44px;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 .vbv-fail-actions .vbv-btn {
-  width: 100%;
-  min-height: 64px;
-  min-width: 64px;
-  padding: 12px 16px;
+  flex: 0 0 auto;
+  width: auto;
+  height: 44px;
+  min-height: 44px;
+  max-height: 44px;
+  min-width: 44px;
+  padding: 0 12px;
   font-family: 'OpenDyslexic', var(--font-ui, system-ui, sans-serif);
-  font-size: max(28px, var(--fs-28, 28px));
+  font-size: 16px;
   font-weight: 700;
-  line-height: 1.2;
-  white-space: normal;
+  line-height: 1;
+  white-space: nowrap;
   text-align: center;
 }
 
@@ -8219,16 +8234,8 @@ var VBVRec = (() => {
     const w = getWordCheckWorker();
     if (w) {
       try { w.postMessage({ type: "warmup" }); } catch (e) {}
-      return Promise.resolve();
     }
-    const go = (api) => {
-      if (!api) return;
-      globalThis.VBVWordCheck = api;
-      if (api.warmup) return api.warmup();
-      if (api.loadPipeline) return api.loadPipeline();
-    };
-    if (globalThis.VBVWordCheck) return Promise.resolve(go(globalThis.VBVWordCheck)).catch(function () {});
-    return import(wordCheckScriptUrl()).then((m) => go(m.default || m.VBVWordCheck || m)).catch(function () {});
+    return Promise.resolve();
   }
   function newTakeToken() {
     return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
@@ -8283,8 +8290,11 @@ var VBVRec = (() => {
       rec.wordCheckTook = took;
     }
     if (rec.state !== V.RECORDING && rec.state !== V.STARTING) rec.emit();
-    rec._reviewWordCheckBusy = false;
-    pumpReviewWordChecks(rec);
+    if (rec._wordCheckWait && rec._wordCheckWait.token === msg.takeToken && rec._wordCheckWait.verseId === vid) {
+      var done = rec._wordCheckWait.resolve;
+      rec._wordCheckWait = null;
+      try { done(); } catch (e) {}
+    }
   }
   function runMainThreadWordCheck(rec, verseId, takeToken, wav, text) {
     const started = Date.now();
@@ -8323,12 +8333,40 @@ var VBVRec = (() => {
     const wavName = String(ref || verseId || "take").replace(/\s+/g, "_") + ".wav";
     const w = getWordCheckWorker();
     if (w) {
-      // Always copy so take.wav is never detached by postMessage transfer.
+      // Transfer a copy so take.wav stays intact for save. The check itself
+      // (decode, resample, inference, alignment) runs only in the worker.
       const copy = wav.slice(0);
       w.postMessage({ type: "enqueue", jobId: ++_wcJobN, verseId, takeToken, wav: copy, text, ref, wavName }, [copy]);
       return;
     }
-    runMainThreadWordCheck(rec, verseId, takeToken, wav, text);
+    // Never run Whisper on the UI thread: iPad would freeze Ignore/Pass.
+    applyWordCheckMessage(rec, { type: "result", verseId, takeToken, ok: false, issues: [], flags: [], note: "Not checked", asr_ms: 0, runtime: null, transcript: "", error: "no-worker" });
+  }
+  // Wait for this one take's word check before save. Only one buffer is in
+  // flight (a transferred copy); the original stays on the take until save.
+  function runWordCheckAndWait(rec, opts) {
+    return new Promise(function (resolve) {
+      var settled = false;
+      var finish = function (why) {
+        if (settled) return;
+        settled = true;
+        if (rec._wordCheckWait && rec._wordCheckWait.token === opts.takeToken) rec._wordCheckWait = null;
+        if (why === "timeout") {
+          var wc = rec.wordChecksById && rec.wordChecksById[opts.verseId];
+          if (!wc || wc.status !== "done") {
+            rec.wordChecksById = rec.wordChecksById || {};
+            rec.wordChecksById[opts.verseId] = Object.assign(wc || {}, { token: opts.takeToken, status: "not-checked", issues: [], flags: [], note: "Not checked" });
+            var take = (rec.takesById && rec.takesById[opts.verseId]) || (rec.take && rec.take.verseId === opts.verseId ? rec.take : null);
+            if (take) take.wordCheckStatus = "not-checked";
+          }
+        }
+        resolve();
+      };
+      rec._wordCheckWait = { token: opts.takeToken, verseId: opts.verseId, resolve: function () { finish(); } };
+      try { warmupWordCheck(); } catch (e) {}
+      enqueueWordCheck(rec, opts);
+      setTimeout(function () { finish("timeout"); }, 10000);
+    });
   }
   // Word checks belong on the end-of-section review, one WAV at a time, so a
   // recording run does not keep Whisper plus every take in RAM (iPad was
@@ -8621,7 +8659,6 @@ var VBVRec = (() => {
       else if (this.statuses[this.verseId] === V.SAVED) this.state = V.SAVED;
       await this.persist();
       this.emit();
-      if (this.state === V.CHAPTER_COMPLETE) try { startReviewWordChecks(this); } catch (e) {}
       return this;
     }
     async ensureMic() {
@@ -8680,6 +8717,7 @@ var VBVRec = (() => {
     async stop() {
       if (this.state !== V.RECORDING) return;
       const g = this.gen;
+      try { warmupWordCheck(); } catch (e) {}
       this.mic && this.mic.flush && this.mic.flush();
       this.go("stop");
       if (this.flushWaitMs) await new Promise((r2) => setTimeout(r2, this.flushWaitMs));
@@ -8711,18 +8749,19 @@ var VBVRec = (() => {
       const takeToken = newTakeToken();
       this.take.wordCheckToken = takeToken;
       cancelWordCheckVerse(verseId);
-      // Word alerts only appear on the end-of-section review. Starting Whisper
-      // and copying every WAV into the worker mid-run fills iPad RAM.
-      if (!this.autoSave) {
-        try { warmupWordCheck(); } catch (e) {}
-        enqueueWordCheck(this, { verseId, takeToken, wav: this.take.wav, text: verseText });
-      }
       if (r.hardFail) return;
       if (this.autoSave) {
-        // Do not wait for the word check. Save at once and move to the next verse.
+        // Check this take first (one at a time), then save to 00 Inbox and tick.
+        this.wordCheckMessage = "Checking words…";
+        this.emit();
+        await new Promise(function (r) { setTimeout(r, 0); }); // let the UI paint; check runs in the worker
+        await runWordCheckAndWait(this, { verseId, takeToken, wav: this.take.wav, text: verseText });
+        if (g !== this.gen) return;
         await this.save();
         return;
       }
+      try { warmupWordCheck(); } catch (e) {}
+      enqueueWordCheck(this, { verseId, takeToken, wav: this.take.wav, text: verseText });
     }
     /**
      * Save: hand the WAV to the storage adapter (IndexedDB queue, returns at once),
@@ -8818,7 +8857,6 @@ var VBVRec = (() => {
           pending: q.filter((i) => i.state === "saving"),
           failed: q.filter((i) => i.state === "failed" || i.state === "needs-signin")
         });
-        try { startReviewWordChecks(this); } catch (e) {}
       } else {
         this.next();
       }
@@ -9149,6 +9187,7 @@ var VBVRec = (() => {
       const displayResult = loudFails.length ? "FAIL" : (overall === "FAIL" || overall === "WARN" || overall === "WARN-OK" ? "PASS" : overall);
       let reason = loudFails.length ? loudFails.map((x) => x.message).join(" ") : (st === V.SAVED || displayResult === "PASS" ? "Ready to stitch." : "");
       if (checking) reason = wcStatus === "checking-again" ? "Checking again…" : "Checking words…";
+      else if (wcStatus === "not-checked") reason = "Not checked";
       const hasWav = !!(takeObj && takeObj.wav) || st === V.SAVED;
       return {
         id: vid,
