@@ -1541,7 +1541,25 @@ html {
 }
 
 /* m3.3 (Robin 20:41): Record, Stop and Re-record always together (one row on iPad; pinned at the bottom on the phone). Greyed when they can't act. */
-#vbvRecMount .vbv-root.vbvr-has-bar > [data-action="record"], #vbvRecMount .vbv-root.vbvr-has-bar > [data-action="stop"], #vbvRecMount .vbv-root.vbvr-has-bar [data-action="record-again"] { display: none !important; }
+#vbvRecMount .vbv-root.vbvr-has-bar > [data-action="record"], #vbvRecMount .vbv-root.vbvr-has-bar > [data-action="stop"], #vbvRecMount .vbv-root.vbvr-has-bar [data-action="record-again"], #vbvRecMount .vbv-root.vbvr-has-bar [data-action="save"] { display: none !important; }
+#vbvRecMount .vbv-autosave-status {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 24px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-ui, 'OpenDyslexic', system-ui, sans-serif);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+}
+#vbvRecMount .vbv-head-right .vbv-save-strip {
+  min-height: 40px;
+}
 #vbvRecMount .vbvr-bar { display: flex; flex-direction: row; gap: 14px; align-items: stretch; flex: 0 0 auto; margin: 14px 0 0; padding: 0 var(--space-margin, 24px); box-sizing: border-box; background: #000; font-family: var(--font-ui, 'OpenDyslexic', system-ui, sans-serif); letter-spacing: var(--letter-spacing, normal); }
 #vbvRecMount .vbvr-bar[hidden] { display: none; }
 #vbvRecMount .vbvr-bar .vbv-btn { flex: 1 1 0; min-width: 0; min-height: 64px; height: auto; margin: 0; padding: 6px 14px; display: inline-flex; align-items: center; justify-content: center; gap: 10px;
@@ -8751,11 +8769,8 @@ var VBVRec = (() => {
       cancelWordCheckVerse(verseId);
       if (r.hardFail) return;
       if (this.autoSave) {
-        // Check this take first (one at a time), then save to 00 Inbox and tick.
-        this.wordCheckMessage = "Checking words…";
-        this.emit();
-        await new Promise(function (r) { setTimeout(r, 0); }); // let the UI paint; check runs in the worker
-        await runWordCheckAndWait(this, { verseId, takeToken, wav: this.take.wav, text: verseText });
+        // Save to 00 Inbox at once. The light check runs alongside and must not gate the upload.
+        try { runWordCheckAndWait(this, { verseId, takeToken, wav: this.take.wav, text: verseText }); } catch (e) {}
         if (g !== this.gen) return;
         await this.save();
         return;
@@ -9158,7 +9173,7 @@ var VBVRec = (() => {
     if (state === V.CHAPTER_COMPLETE) screen = "complete";
     else if (state === V.READY || state === V.STORAGE_FULL || state === V.AUTH || state === V.FAILED_CHECK) screen = "review";
     const takeGate = rec.take ? gateOverall(rec.take.checks) : null;
-    const canSave = (state === V.READY || state === V.STORAGE_FULL || state === V.AUTH) && takeGate !== "FAIL";
+    const canSave = !rec.autoSave && (state === V.READY || state === V.STORAGE_FULL || state === V.AUTH) && takeGate !== "FAIL";
     const prevId = index > 0 ? ids[index - 1] : null;
     const nextId = index < ids.length - 1 ? ids[index + 1] : null;
     const takeS = rec.take && rec.take.meta && rec.take.meta.durationS != null ? rec.take.meta.durationS : rec.take && rec.take.wav ? null : 0;
@@ -9281,7 +9296,12 @@ var VBVRec = (() => {
       playLabel: `Play  ${formatTimer(takeS || 0)}`,
       saveLabel: "Save  \xB7  send to Drive",
       recordAgainLabel: "Record again",
-      canSave
+      canSave,
+      autoSave: !!rec.autoSave,
+      saveStatus: rec.state === V.SAVING || (strip && strip.kind === "saving") ? "Saving\u2026"
+        : (strip && strip.kind === "saved") ? "Saved"
+        : (strip && (strip.kind === "needs-signin" || strip.kind === "not-saved")) ? "Not saved"
+        : ""
     };
   }
   function el(tag, attrs = {}, ...kids) {
@@ -9478,7 +9498,9 @@ var VBVRec = (() => {
     play.appendChild(playIcon());
     play.appendChild(el("span", { class: "vbv-btn-label", text: model.playLabel }));
     row.appendChild(play);
-    if (model.canSave !== false) {
+    if (model.autoSave) {
+      row.appendChild(el("span", { class: "vbv-autosave-status", role: "status", "aria-live": "polite", text: model.saveStatus || "" }));
+    } else if (model.canSave !== false) {
       row.appendChild(el("button", { type: "button", class: "vbv-btn vbv-btn-primary", "data-action": "save", text: model.saveLabel }));
     }
     const againClass = model.canSave === false ? "vbv-btn vbv-btn-primary" : "vbv-btn vbv-btn-secondary";

@@ -262,7 +262,9 @@ const verseRun = await page.evaluate(async ({ VERSE_N, CHECK_DELAY_MS }) => {
           if (samples) lv = TTCore.measureLevel([samples], rate);
         }
       } catch (e) { lv = { error: String(e) }; }
-      window.__events.push({ t: 'save', id, at: Date.now(), wcStatus: wc && wc.status, wavBytes: wav && (wav.byteLength || wav.size) || 0, lv });
+      const at = Date.now();
+      const stopAt = window.__stopAt && window.__stopAt[id];
+      window.__events.push({ t: 'save', id, at, stopMs: stopAt != null ? at - stopAt : null, wcStatus: wc && wc.status, wavBytes: wav && (wav.byteLength || wav.size) || 0, lv });
       return origSave(id, wav, meta);
     };
   }
@@ -278,8 +280,26 @@ const verseRun = await page.evaluate(async ({ VERSE_N, CHECK_DELAY_MS }) => {
     // wait until recording, then stop
     const tRec = Date.now();
     while (Date.now() - tRec < 8000 && rec.state !== 'RECORDING') await new Promise((r) => setTimeout(r, 20));
-    // Probe UI lag while the (mocked) check will be in flight after Stop
+    const tStop = Date.now();
+    window.__stopAt = window.__stopAt || {};
+    window.__stopAt[id] = tStop;
+    window.__saveBtnSeen = window.__saveBtnSeen || [];
+    const noteSaveBtn = () => {
+      const btns = [...document.querySelectorAll('[data-action="save"]')];
+      const vis = btns.filter((b) => {
+        if (b.disabled) return false;
+        const r = b.getBoundingClientRect();
+        const cs = getComputedStyle(b);
+        return r.width > 2 && r.height > 2 && cs.display !== 'none' && cs.visibility !== 'hidden' && cs.opacity !== '0';
+      }).map((b) => (b.textContent || '').trim());
+      if (vis.length) window.__saveBtnSeen.push({ id, at: Date.now() - tStop, labels: vis });
+    };
+    noteSaveBtn();
     const stopP = rec.stop();
+    noteSaveBtn();
+    setTimeout(noteSaveBtn, 50);
+    setTimeout(noteSaveBtn, 200);
+    setTimeout(noteSaveBtn, 500);
     // After Stop, Checking words… then the worker delays CHECK_DELAY_MS
     const tWait = Date.now();
     while (Date.now() - tWait < 400) {
@@ -313,9 +333,19 @@ const verseRun = await page.evaluate(async ({ VERSE_N, CHECK_DELAY_MS }) => {
     const liveWavs = Object.values(rec.takesById || {}).filter((t) => t && t.wav && (t.wav.byteLength || t.wav.size) > 0).length;
     wavCounts.push(liveWavs);
   }
+  const tWc = Date.now();
+  while (Date.now() - tWc < 8000) {
+    const left = ids.some((id) => {
+      const st = rec.wordChecksById && rec.wordChecksById[id] && rec.wordChecksById[id].status;
+      return st && st !== 'done' && st !== 'not-checked';
+    });
+    if (!left) break;
+    await new Promise((r) => setTimeout(r, 50));
+  }
 
   return {
     events: window.__events,
+    saveBtnSeen: window.__saveBtnSeen || [],
     clickMs: window.__clickMs,
     clickSamples,
     wavCounts,
@@ -478,9 +508,10 @@ server.close();
 
 const events = verseRun.events || [];
 const saves = events.filter((e) => e.t === 'save');
-const allCheckedBeforeSave = saves.length >= VERSE_N && saves.every((e) => e.wcStatus === 'done' || e.wcStatus === 'not-checked');
-const actuallyChecked = saves.filter((e) => e.wcStatus === 'done').length;
 const allSaved = (verseRun.statuses || []).every((st) => st === 'SAVED');
+const uploadWithin1s = saves.length >= VERSE_N && saves.every((e) => e.stopMs != null && e.stopMs <= 1000);
+const noManualSaveButton = !(verseRun.saveBtnSeen && verseRun.saveBtnSeen.length);
+const checksFinished = verseRun.wc && Object.values(verseRun.wc).every((st) => st === 'done' || st === 'not-checked');
 const memoryFlat = (verseRun.wavCounts || []).every((c) => c === 0);
 const clickOk = verseRun.clickMs != null && verseRun.clickMs < 200;
 const buttonsCompact = css.flexDir === 'row' && css.btnMinH <= 48 && css.btnMinH >= 40 && css.btnFont <= 20 && css.reservedH >= 40;
@@ -499,7 +530,9 @@ const checks = {
   flagPolicy: Object.values(flagTests).every(Boolean),
   buttonsCompact,
   twentyVerseSaves: saves.length >= VERSE_N && allSaved,
-  checkBeforeSave: allCheckedBeforeSave && actuallyChecked >= VERSE_N,
+  uploadStartsWithin1sOfStop: uploadWithin1s,
+  noManualSaveButton,
+  checkRunsAlongside: !!checksFinished,
   memoryFlat,
   clickWhileCheckUnder200ms: clickOk,
   passageTwoSaves: passageRun.results && passageRun.results.length === 2 && passageSaved,
@@ -517,6 +550,8 @@ const report = {
   css,
   clickMs: verseRun.clickMs,
   wavCounts: verseRun.wavCounts,
+  saveDelays: saves.map((e) => e.stopMs),
+  saveBtnSeen: verseRun.saveBtnSeen,
   saveCount: saves.length,
   failRun,
   retryRun,
@@ -527,5 +562,5 @@ const report = {
   indexBytes: fs.statSync(path.join(ROOT, 'index.html')).size,
 };
 fs.writeFileSync(REPORT, JSON.stringify(report, null, 2));
-console.log(JSON.stringify({ ok: report.ok, checks, flagTests, clickMs: verseRun.clickMs, css, wavCounts: verseRun.wavCounts, failRun, retryRun, verseLevels: (verseRun.events||[]).filter(e=>e.t==='save').map(e=>e.lv&&e.lv.lufs), passageLevels: (passageRun.results || []).map((r) => r.lv), pageErrors, indexBytes: report.indexBytes }, null, 2));
+console.log(JSON.stringify({ ok: report.ok, checks, flagTests, clickMs: verseRun.clickMs, css, wavCounts: verseRun.wavCounts, saveDelays: saves.map((e) => e.stopMs), saveBtnSeen: verseRun.saveBtnSeen, failRun, retryRun, verseLevels: (verseRun.events||[]).filter(e=>e.t==='save').map(e=>e.lv&&e.lv.lufs), passageLevels: (passageRun.results || []).map((r) => r.lv), pageErrors, indexBytes: report.indexBytes }, null, 2));
 if (!report.ok) process.exit(1);
