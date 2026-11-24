@@ -168,6 +168,35 @@ function toneWav(seconds, silent) {
   // built in the page with KJVAudio
 }
 
+const nav = await page.evaluate(() => {
+  const unit = VBV.idsFor('RUT', 1);
+  VBV.openVerseRecorder(unit, unit.ids[0]);
+  const prev = document.getElementById('prevVerse');
+  const next = document.getElementById('nextVerse');
+  const rec = document.getElementById('recBtn');
+  const recCs = getComputedStyle(rec);
+  const prevCs = getComputedStyle(prev);
+  const inBar = !!(prev && next && rec && prev.parentElement && prev.parentElement.classList.contains('rec-bar') && next.parentElement === prev.parentElement && rec.parentElement === prev.parentElement);
+  const sameStyle = prevCs.fontSize === recCs.fontSize && prevCs.minHeight === recCs.minHeight;
+  const atStart = { verse: KJVRec.currentVerse(), prevDisabled: prev.disabled, nextDisabled: next.disabled, prevLabel: prev.textContent, nextLabel: next.textContent };
+  next.click();
+  const afterNext = KJVRec.currentVerse();
+  prev.click();
+  const afterPrev = KJVRec.currentVerse();
+  VBV.openVerseRecorder(unit, unit.ids[unit.ids.length - 1]);
+  next.click();
+  const across = { verse: KJVRec.currentVerse() };
+  VBV.openVerseRecorder(VBV.idsFor('GEN', 1), 'GEN.1.1');
+  const atGen = { verse: KJVRec.currentVerse(), prevDisabled: document.getElementById('prevVerse').disabled, nextDisabled: document.getElementById('nextVerse').disabled };
+  const lastId = DotsMap.verseId(DotsMap.TOTAL - 1);
+  const lastUnit = VBV.idsFor(lastId.split('.')[0], +lastId.split('.')[1]);
+  VBV.openVerseRecorder(lastUnit, lastId);
+  const atEnd = { verse: KJVRec.currentVerse(), prevDisabled: document.getElementById('prevVerse').disabled, nextDisabled: document.getElementById('nextVerse').disabled };
+  // restore Ruth 1.1 for the rest of the suite
+  VBV.openVerseRecorder(unit, unit.ids[0]);
+  return { inBar, sameStyle, atStart, afterNext, afterPrev, across, atGen, atEnd, lastId, btnMinH: parseFloat(prevCs.minHeight) };
+});
+
 const verseRun = await page.evaluate(async ({ VERSE_N, INBOX }) => {
   const A = window.KJVAudio;
   const sr = 48000;
@@ -266,6 +295,13 @@ const checks = {
   flaggedKept: verseRun.alertCount >= 1,
   noPageErrors: pageErrors.length === 0,
   htmlLight: htmlBytes < 100000,
+  verseNav: !!(nav.inBar && nav.sameStyle
+    && nav.atStart.verse === 'RUT.1.1' && nav.atStart.prevLabel === '◀ Previous verse' && nav.atStart.nextLabel === 'Next verse ▶'
+    && nav.atStart.nextDisabled === false
+    && nav.afterNext === 'RUT.1.2' && nav.afterPrev === 'RUT.1.1'
+    && nav.across.verse === 'RUT.2.1'
+    && nav.atGen.verse === 'GEN.1.1' && nav.atGen.prevDisabled === true && nav.atGen.nextDisabled === false
+    && nav.atEnd.verse === nav.lastId && nav.atEnd.prevDisabled === false && nav.atEnd.nextDisabled === true),
 };
 
 const ok = Object.values(checks).every(Boolean);
@@ -282,7 +318,7 @@ const report = {
   shots: fs.readdirSync(SHOT_DIR).map((n) => path.join(SHOT_DIR, n)),
 };
 fs.writeFileSync(REPORT, JSON.stringify(report, null, 2));
-console.log(JSON.stringify({ ok, checks, htmlBytes, uploads: uploads.length, clickMs: verseRun.firstClickMs, errors: pageErrors, css }, null, 2));
+console.log(JSON.stringify({ ok, checks, htmlBytes, uploads: uploads.length, clickMs: verseRun.firstClickMs, errors: pageErrors, css, nav }, null, 2));
 
 await ctx.close();
 server.close();

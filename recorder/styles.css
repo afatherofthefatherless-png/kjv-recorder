@@ -173,12 +173,13 @@ html, body {
 .rec-bar {
   display: flex;
   flex-direction: row;
+  flex-wrap: wrap;
   gap: 10px;
   align-items: center;
   margin-top: 12px;
   min-height: 44px; /* reserved so the page does not jump */
 }
-#recBtn, #reRecBtn {
+#recBtn, #reRecBtn, #prevVerse, #nextVerse {
   font: inherit;
   font-family: "OpenDyslexic", system-ui, sans-serif;
   font-size: 18px;
@@ -193,8 +194,9 @@ html, body {
   cursor: pointer;
 }
 #recBtn.is-stop { background: #c62828; color: #fff; border-color: #fff; }
-#reRecBtn { background: #000; color: #fff; }
-#recBtn:focus-visible, #reRecBtn:focus-visible, .chk-btn:focus-visible, .nav-row button:focus-visible {
+#reRecBtn, #prevVerse, #nextVerse { background: #000; color: #fff; }
+#prevVerse:disabled, #nextVerse:disabled { opacity: .45; cursor: not-allowed; }
+#recBtn:focus-visible, #reRecBtn:focus-visible, #prevVerse:focus-visible, #nextVerse:focus-visible, .chk-btn:focus-visible, .nav-row button:focus-visible {
   outline: 3px solid #fff;
   outline-offset: 2px;
 }

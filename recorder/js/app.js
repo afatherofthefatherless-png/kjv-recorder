@@ -192,11 +192,46 @@
     }
     box.appendChild(document.createTextNode(t || "Loading the verse text…"));
     $("recPos").textContent = positionLabel();
+    updateNav();
   }
   function positionLabel() {
     if (!unitCur || !verseId) return "";
     var i = unitCur.ids.indexOf(verseId);
     return (i + 1) + " of " + unitCur.ids.length;
+  }
+
+  function neighborId(delta) {
+    if (!verseId || !window.DotsMap) return null;
+    var g = DotsMap.verseIndex(verseId);
+    if (g < 0) return null;
+    var n = g + delta;
+    if (n < 0 || n >= DotsMap.TOTAL) return null;
+    return DotsMap.verseId(n);
+  }
+  function showTrackedVerse(id) {
+    if (!id) return;
+    verseId = id;
+    if (!unitCur || unitCur.ids.indexOf(id) < 0) {
+      var p = id.split(".");
+      if (VBV.idsFor) {
+        unitCur = VBV.idsFor(p[0], +p[1]);
+        var ch = $("recChapter");
+        if (ch) ch.textContent = unitCur && unitCur.name ? unitCur.name : "";
+      }
+    }
+    renderVerse();
+  }
+  function updateNav() {
+    var prev = $("prevVerse"), next = $("nextVerse");
+    if (prev) prev.disabled = !!recording || !neighborId(-1);
+    if (next) next.disabled = !!recording || !neighborId(1);
+  }
+  function goTrack(delta) {
+    if (recording) return;
+    var id = neighborId(delta);
+    if (!id) return;
+    setStatus("", "");
+    showTrackedVerse(id);
   }
 
   function firstUnsaved(fromId) {
@@ -270,6 +305,7 @@
     b.textContent = on ? "Stop" : "Record";
     b.setAttribute("aria-pressed", on ? "true" : "false");
     b.classList.toggle("is-stop", on);
+    updateNav();
   }
 
   async function onRecordStop() {
@@ -510,6 +546,8 @@
   function bind() {
     $("recBtn").addEventListener("click", function () { onRecordStop().catch(function (e) { setStatus((e && e.message) || String(e), "err"); }); });
     $("reRecBtn").addEventListener("click", onRerecord);
+    $("prevVerse") && $("prevVerse").addEventListener("click", function () { goTrack(-1); });
+    $("nextVerse") && $("nextVerse").addEventListener("click", function () { goTrack(1); });
     $("tab-tracker").addEventListener("click", function () { if (recording) return; showView("tracker"); });
     $("tab-checks").addEventListener("click", function () { if (recording) return; showView("checks"); });
     $("backTracker") && $("backTracker").addEventListener("click", function () { if (recording) return; showView("tracker"); });
