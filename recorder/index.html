@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>Bible Reading Tracker and Recorder</title>
+  <link rel="stylesheet" href="vendor/tracker.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header id="shell-top">
+  <div class="vbv-head">
+    <p class="vbv-apptitle">Bible Reading Tracker</p>
+    <p class="vbv-progtext" id="vbvProgText" aria-live="off"></p>
+  </div>
+  <div class="vbv-track shell-progress" aria-hidden="true"><i id="vbvProgFill"></i></div>
+  <div class="nav-row" role="tablist" aria-label="Views">
+    <button type="button" role="tab" id="tab-tracker" aria-selected="true" aria-controls="view-tracker">Tracker</button>
+    <button type="button" role="tab" id="tab-checks" aria-selected="false" aria-controls="view-checks">Checks</button>
+    <button type="button" class="kjb-setbtn" id="settingsBtn" aria-haspopup="dialog" aria-controls="drawer-settings">
+      <span class="kjb-gear" aria-hidden="true">&#9881;</span> Settings
+    </button>
+  </div>
+</header>
+
+<section id="view-tracker" data-kjb-app="tracker" role="tabpanel" aria-labelledby="tab-tracker">
+  <section id="vbv-home" aria-label="Verse map">
+    <div id="vbvBooks" class="vbvg-books"></div>
+    <div id="vbvBookBar" class="vbvg-bar" hidden>
+      <button type="button" class="vbvh-quiet vbvg-all">All books</button>
+      <h2 class="vbvg-h" tabindex="-1"></h2>
+      <p class="vbvg-sub"></p>
+    </div>
+    <div id="vbvMap"></div>
+    <div id="vbvLined" hidden></div>
+  </section>
+</section>
+
+<section id="view-recorder" hidden role="tabpanel">
+  <div class="rec-top">
+    <button type="button" class="linkish" id="backTracker">Back to the Tracker</button>
+    <h1 id="recChapter"></h1>
+    <span class="rec-meta" id="recPos"></span>
+  </div>
+  <p id="verseRef" class="rec-meta"></p>
+  <div class="verse-box" id="verseText" tabindex="0" aria-label="Verse text to read aloud"></div>
+  <p class="rec-status" id="recStatus" role="status" aria-live="polite"></p>
+  <div class="rec-bar">
+    <button type="button" id="recBtn" aria-pressed="false">Record</button>
+    <button type="button" id="reRecBtn">Re-record</button>
+  </div>
+</section>
+
+<section id="view-checks" hidden role="tabpanel" aria-labelledby="tab-checks">
+  <h1>Checks</h1>
+  <p class="kjb-muted">Takes that were flagged stay on this iPad so you can listen and decide. They are already saved to Drive.</p>
+  <div id="checkList"></div>
+</section>
+
+<div class="kjb-scrim" id="scrim-settings" hidden></div>
+<aside class="kjb-drawer" id="drawer-settings" role="dialog" aria-modal="true" aria-labelledby="dt-settings" hidden>
+  <div class="kjb-dhead">
+    <div>
+      <h2 id="dt-settings">Settings &amp; info</h2>
+      <div class="kjb-muted">Remembered on this device</div>
+    </div>
+    <button type="button" class="kjb-second kjb-close" id="settingsClose">Close</button>
+  </div>
+  <div class="kjb-dbody">
+    <p class="kjb-dintro">Tap a heading to open it. Nothing here changes until you press its button.</p>
+    <details class="kjb-sec">
+      <summary><span class="t">Save code<span class="hint">Other devices</span></span></summary>
+      <div class="in">
+        <p>Type the same short phrase on every device. The verses you have recorded are then shared between them.</p>
+        <label for="vbvCode">Your save code</label>
+        <input id="vbvCode" type="text" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
+        <div class="kjb-stack"><button type="button" class="kjb-primary" id="vbvCodeUse">Use this code</button></div>
+        <p id="vbvCodeStatus" aria-live="polite"></p>
+      </div>
+    </details>
+    <details class="kjb-sec">
+      <summary><span class="t">Verse text<span class="hint">Size, verse numbers</span></span></summary>
+      <div class="in">
+        <label class="check"><input type="checkbox" id="ptNums" checked> Show verse numbers</label>
+        <p>
+          <button type="button" class="kjb-second" id="ptSmaller" aria-label="Smaller text">A&minus;</button>
+          <button type="button" class="kjb-second" id="ptBigger" aria-label="Bigger text">A+</button>
+        </p>
+      </div>
+    </details>
+    <details class="kjb-sec">
+      <summary>About recording on iPad</summary>
+      <div class="in">
+        <p>Allow the microphone when Safari asks. Keep the screen on while you record.</p>
+        <p>Each verse is saved to Drive 00 Inbox as soon as you tap Stop. A quick word check then flags only missing or added words, or silence.</p>
+      </div>
+    </details>
+    <p class="kjb-muted kjb-build">Build: <span id="buildLabel">recorder-light-20261124</span></p>
+  </div>
+</aside>
+
+<script src="js/kjb-shell.js"></script>
+<script src="js/kjv.js"></script>
+<script src="vendor/dots-map.js"></script>
+<script src="vendor/stages.js"></script>
+<script src="vendor/vbv-drive.js"></script>
+<script src="vendor/kjv-audio.js"></script>
+<script src="js/capture.js"></script>
+<script src="vendor/vbv-home.js"></script>
+<script src="vendor/vbv-drive-mark.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

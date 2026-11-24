@@ -1,5 +1,14 @@
 #!/usr/bin/env node
 /**
+ * Router: `node scripts/regression.mjs recorder` runs the light /recorder/ suite.
+ * `node scripts/regression.mjs --live` (or no recorder arg) runs the live root suite.
+ */
+if (process.argv.includes("recorder") || process.argv.includes("--page=recorder")) {
+  await import("./regression-recorder.mjs");
+  process.exit(0);
+}
+
+/**
  * iPad-sized headless regression for the live recorder.
  * Not part of the published app (safe to sit under scripts/).
  *
