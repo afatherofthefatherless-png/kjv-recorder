@@ -10043,8 +10043,18 @@ var VBVRec = (() => {
       ctx = new AudioContext();
       source = ctx.createMediaStreamSource(stream);
     }
-    if (!workletUrl) workletUrl = URL.createObjectURL(new Blob([WORKLET_SRC], { type: "text/javascript" }));
-    await ctx.audioWorklet.addModule(workletUrl);
+    // Same-origin file first: iPad Safari often fails addModule() on a blob: URL
+    // ("Importing a module script failed"). Fall back to a JS-MIME blob if needed.
+    var fileUrl = (function () {
+      var href = (location.pathname.endsWith("/") || /index\.html$/i.test(location.pathname)) ? location.href : location.href + "/";
+      return new URL("kjv-capture-worklet.js", new URL(".", new URL(href, location.href))).href;
+    })();
+    try {
+      await ctx.audioWorklet.addModule(fileUrl);
+    } catch (e) {
+      if (!workletUrl) workletUrl = URL.createObjectURL(new Blob([WORKLET_SRC], { type: "application/javascript;charset=utf-8" }));
+      await ctx.audioWorklet.addModule(workletUrl);
+    }
     const node = new AudioWorkletNode(ctx, "kjv-capture", { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1, channelCountMode: "explicit" });
     const mute = ctx.createGain();
     mute.gain.value = 0;
