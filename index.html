@@ -6687,6 +6687,15 @@ var VBVStages = (function () {
     }).catch(function (e) { state.error = String(e && e.message || e); });
   }
   function schedulePush() { clearTimeout(pushTimer); pushTimer = setTimeout(function () { pull(); }, 1500); } // pull-merge-push, so another device's verses are never overwritten
+  // One-off: if this browser still has ticks from the /test/ page, merge them into the live register
+  try {
+    var testDoc = JSON.parse(localStorage.getItem('kjvrec-test-bible-coverage-tracker.vbv.stages.v1') || 'null');
+    if (valid(testDoc) && !isEmpty(testDoc)) {
+      load();
+      var merged = merge(doc, testDoc);
+      if (!same(merged, doc)) { doc = merged; saveLocal(); }
+    }
+  } catch (e) {}
   return { KEY: KEY, load: load, get: get, setVerse: setVerse, setUnit: setUnit, localStitch: localStitch, clearChapter: clearChapter, each: each, toArray: toArray, onChange: onChange, merge: merge,
     pull: pull, push: push, slot: slot, code: code, setCode: setCode, CODEKEY: SYNCKEY, state: function () { return Object.assign({}, state); }, doc: function () { return JSON.parse(JSON.stringify(load())); } };
 })();
@@ -10568,7 +10577,11 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
   function onSaved(h) { // upload finished: { id, drive_id (fileId), sha256, gate, take_at, retake }
     var prev = VBVStages.get(h.id) || {};
     VBVStages.setVerse(h.id, { st: Math.max(1, prev.st | 0), at: h.take_at || undefined, sha256: h.sha256, drive_id: h.drive_id,
-      gate: h.gate && h.gate.overall || prev.gate || 'PASS', rev: (prev.rev | 0) || 1, trim: TRIM });
+      gate: (h.gate && h.gate.overall) || h.gate || prev.gate || 'PASS', rev: (prev.rev | 0) + 1, trim: TRIM });
+    if (h.retake && (prev.st | 0) >= 2 && unitCur) {
+      var u = (VBVStages.doc().units || {})[unitCur.stem] || {};
+      VBVStages.setUnit(unitCur.stem, Object.assign({}, u, { restitch: true }));
+    }
   }
   function makeInner(opts) {
     opts = opts || {};
@@ -10870,11 +10883,8 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
         autoSave: true, // Continuous save-on-Stop. Word alerts appear only on the end-of-section review.
         openMic: function (o) { return (micFactory || R.openMicInline)(o); },
         shell: { promptSignIn: function () { connectDrive(); } },
-        onTakeAccepted: function (h) { // Stop saved the take (m3.2): the verse is recorded now; the upload carries on in the background
+        onTakeAccepted: function (h) { // Stop queued the take; the Tracker ticks it only when Drive confirms (onSaved)
           justSaved = h.id; setTimeout(updateBar, 0);
-          var prev = VBVStages.get(h.id) || {};
-          VBVStages.setVerse(h.id, { st: Math.max(1, prev.st | 0), at: h.take_at, sha256: h.sha256, gate: h.gate && h.gate.overall, rev: (prev.rev | 0) + 1, trim: TRIM, drive_id: prev.drive_id || null });
-          if (h.retake && (prev.st | 0) >= 2) { var u = (VBVStages.doc().units || {})[stem] || {}; VBVStages.setUnit(stem, Object.assign({}, u, { restitch: true })); }
         },
         onUnitComplete: function (info) { VBVStages.localStitch(info.stem, { state: 'all-recorded', pending: info.pending.length, failed: info.failed.length }); },
         onStitchNow: function () { // m3.7: write <Book> <C>.stitch-request (or <Book>.stitch-request for a whole short book) into 00 Inbox
