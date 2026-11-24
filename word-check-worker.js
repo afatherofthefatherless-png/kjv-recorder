@@ -11,12 +11,14 @@ function post(msg) {
 }
 
 async function runJob(job) {
-  const { jobId, verseId, takeToken, wav, text } = job;
+  const { jobId, verseId, takeToken, wav, text, ref, wavName } = job;
   const base = { jobId, verseId, takeToken };
   try {
     post({ type: "status", ...base, status: "checking" });
     const r = await checkAudio(wav, text, {
       onStatus: (s) => post({ type: "status", ...base, status: s }),
+      ref: ref || verseId || "",
+      wavName: wavName || "",
     });
     post({
       type: "result",
@@ -76,6 +78,8 @@ self.onmessage = (e) => {
       takeToken: msg.takeToken,
       wav: msg.wav,
       text: msg.text,
+      ref: msg.ref || "",
+      wavName: msg.wavName || "",
     });
     pump();
     return;

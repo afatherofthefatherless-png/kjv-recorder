@@ -242,24 +242,26 @@ function isCompoundPair(a, b, joined) {
   return !!(a && b && joined && (plain(a) + plain(b) === plain(joined) || plain(joined) === plain(a) + plain(b)));
 }
 
-export function cleanFlags(flags) { // align_unit.py:207-246
+export function isSwapKind(t) { return t === "sub" || t === "swap"; }
+
+function cleanFlags(flags) { // align_unit.py:207-246
   let out = flags.slice();
   const drop = new Set();
   for (let i = 0; i < out.length - 1; i++) {
     const a = out[i], b = out[i + 1];
-    if (a.type === "missing" && b.type === "sub" && isCompoundPair(a.kjv, b.kjv, b.asr)) drop.add(i), drop.add(i + 1);
-    if (a.type === "sub" && b.type === "missing" && isCompoundPair(a.kjv, b.kjv, a.asr)) drop.add(i), drop.add(i + 1);
+    if (a.type === "missing" && isSwapKind(b.type) && isCompoundPair(a.kjv, b.kjv, b.asr)) drop.add(i), drop.add(i + 1);
+    if (isSwapKind(a.type) && b.type === "missing" && isCompoundPair(a.kjv, b.kjv, a.asr)) drop.add(i), drop.add(i + 1);
     // split compounds: sackcloth → "sack" + "cloth", sixscore → "six" + "score"
-    if (a.type === "extra" && b.type === "sub" && isCompoundPair(a.asr, b.asr, b.kjv)) drop.add(i), drop.add(i + 1);
-    if (a.type === "sub" && b.type === "extra" && isCompoundPair(a.asr, b.asr, a.kjv)) drop.add(i), drop.add(i + 1);
+    if (a.type === "extra" && isSwapKind(b.type) && isCompoundPair(a.asr, b.asr, b.kjv)) drop.add(i), drop.add(i + 1);
+    if (isSwapKind(a.type) && b.type === "extra" && isCompoundPair(a.asr, b.asr, a.kjv)) drop.add(i), drop.add(i + 1);
   }
   out = out.filter((_, i) => !drop.has(i));
   const drop2 = new Set();
   const plainsKjv = [];
-  out.forEach((f, i) => { if (f.type === "missing" || f.type === "sub") plainsKjv.push([plain(f.kjv), i]); });
+  out.forEach((f, i) => { if (f.type === "missing" || isSwapKind(f.type)) plainsKjv.push([plain(f.kjv), i]); });
   out.forEach((f, i) => {
     const kn = plain(f.kjv), an = plain(f.asr);
-    if (f.type === "sub") {
+    if (isSwapKind(f.type)) {
       for (const [closedW, parts] of Object.entries(CLOSED)) {
         if (an === closedW && parts.has(kn)) {
           drop2.add(i);
@@ -270,7 +272,7 @@ export function cleanFlags(flags) { // align_unit.py:207-246
       }
     }
     if (f.type === "missing" && Object.prototype.hasOwnProperty.call(CLOSED, kn)) drop2.add(i);
-    if (f.type === "sub" && Object.prototype.hasOwnProperty.call(CLOSED, kn) && CLOSED[kn].has(an)) drop2.add(i);
+    if (isSwapKind(f.type) && Object.prototype.hasOwnProperty.call(CLOSED, kn) && CLOSED[kn].has(an)) drop2.add(i);
   });
   return out.filter((_, i) => !drop2.has(i));
 }
@@ -342,15 +344,65 @@ function lastAsrTime(words) {
   return t;
 }
 
-export function flagOps(ops, kjv, asr, verseConf) { // align_unit.py:165-190
+function archaicEquiv(a, b) {
+  if (!a || !b || a === b) return false;
+  const sa = ARCHAIC[a] || new Set([a]);
+  const sb = ARCHAIC[b] || new Set([b]);
+  if (sb.has(a) || sa.has(b)) return true;
+  for (const x of sa) if (sb.has(x)) return true;
+  return false;
+}
+
+function sameWordForm(a, b) {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (archaicEquiv(a, b)) return false;
+  return false; // do not treat hand/hands as the same word
+}
+
+function sentenceInitial(kjv, i) {
+  if (i <= 0) return true;
+  return /[.!?;:]$/.test(String(kjv[i - 1] || ""));
+}
+
+function isNameToken(tok) {
+  if (!tok) return false;
+  const core = String(tok).replace(/\u2019/g, "'").replace(/\u2018/g, "'").replace(/^[^A-Za-z0-9']+|[^A-Za-z0-9']+$/g, "");
+  const letters = core.replace(/[^A-Za-z]/g, "");
+  if (!letters || !/[A-Z]/.test(letters)) return false;
+  const low = letters.toLowerCase();
+  if (FUNC.has(low)) return false;
+  if (/^(then|so|and|but|for|now|arise|wherefore|nevertheless|therefore|also)$/.test(low)) return false;
+  return true;
+}
+
+/** Capitalised name, or a word from the ARCHAIC / NEAR / RARE_VOCAB lists. */
+export function isUnusualKjv(tok, kjv, i) {
+  const kn = norm(tok);
+  if (!kn || kn.length <= 2 || FUNC.has(kn)) return false;
+  if (tok && /^[A-Z]/.test(String(tok).replace(/^[^A-Za-z]+/, "")) && !sentenceInitial(kjv || [], i == null ? 0 : i)) return true;
+  // NEAR typo-pairs (cry/crime, rowed/rode) are ordinary swaps, not archaic.
+  if (ARCHAIC[kn] || (typeof RARE_VOCAB !== "undefined" && RARE_VOCAB.has(kn))) return true;
+  return false;
+}
+
+export function flagOps(ops, kjv, asr, verseConf) { // align_unit.py flag_ops, plus swap/archaic kinds
   const flags = [];
-  for (const [kind, i, j] of ops) {
-    if (kind === "match") continue;
+  for (const [rawKind, i, j] of ops) {
     const kj = i != null ? kjv[i] : null;
     const aw = j != null ? asrWord(asr[j]) : null;
     const kn = kj ? norm(kj) : "", an = aw ? norm(aw) : "";
-    if (kind === "sub" && equivTokens(kj, aw)) continue;
-    // Never suppress function words: every missing, extra, or swapped word is flagged.
+    let kind = rawKind;
+    if (kind === "match") {
+      if (sameWordForm(kn, an)) continue;
+      if (archaicEquiv(kn, an) || (kj != null && isUnusualKjv(kj, kjv, i) && kn !== an)) kind = "archaic";
+      else continue;
+    } else if (kind === "sub") {
+      if (sameWordForm(kn, an)) continue;
+      if (archaicEquiv(kn, an) || (kj != null && isUnusualKjv(kj, kjv, i) && kn !== an)) kind = "archaic";
+      else kind = "swap";
+    }
+    // missing / extra (including small words) stay as-is.
     let wp = null;
     if (j != null) wp = asrProb(asr[j]);
     let conf = "high";
@@ -359,9 +411,9 @@ export function flagOps(ops, kjv, asr, verseConf) { // align_unit.py:165-190
     const start = (j != null && asr[j] && asr[j].start != null) ? asr[j].start : null;
     const end = (j != null && asr[j] && asr[j].end != null) ? asr[j].end : null;
     flags.push({
-      type: kind, kjv: kj, asr: aw, confidence: conf,
+      type: kind, kind, kjv: kj, asr: aw, confidence: conf,
       word_prob: wp == null ? null : Math.round(wp * 1000) / 1000,
-      start, end,
+      start, end, _ki: i, _aj: j,
     });
   }
   return cleanFlags(flags);
@@ -434,16 +486,159 @@ export function checkTranscript(kjvText, asrWords, opts = {}) {
 }
 
 function displayWord(tok) {
-  if (!tok) return "";
-  return String(tok).replace(/\u2019/g, "'").replace(/\u2018/g, "'").replace(/^[^A-Za-z0-9']+|[^A-Za-z0-9']+$/g, "");
+  if (tok == null || tok === "") return "";
+  let s = String(tok).replace(/\u2019/g, "'").replace(/\u2018/g, "'");
+  s = s.replace(/^[^A-Za-z0-9']+|[^A-Za-z0-9']+$/g, "");
+  if (!s) return "";
+  return isNameToken(tok) ? s : s.toLowerCase();
+}
+
+export function kjvContext(kjv, i, window = 3) {
+  if (i == null || i < 0 || !kjv || i >= kjv.length) return null;
+  const lo = Math.max(0, i - window), hi = Math.min(kjv.length, i + window + 1);
+  const parts = [];
+  for (let k = lo; k < hi; k++) parts.push(k === i ? "[" + kjv[k] + "]" : kjv[k]);
+  return parts.join(" ");
+}
+
+export function extraContext(kjv, insertAt, heard, window = 3) {
+  const toks = (kjv || []).slice();
+  const at = insertAt == null ? toks.length : Math.max(0, Math.min(toks.length, insertAt));
+  const mark = "[" + (displayWord(heard) || "") + "]";
+  const lo = Math.max(0, at - window), hi = Math.min(toks.length, at + window);
+  const parts = toks.slice(lo, at).concat([mark], toks.slice(at, hi));
+  return parts.join(" ");
+}
+
+// Short sha1 (first 12 hex chars used for flag ids).
+function sha1hex(message) {
+  function rotl(n, s) { return (n << s) | (n >>> (32 - s)); }
+  const bytes = unescape(encodeURIComponent(String(message)));
+  const arr = [];
+  for (let i = 0; i < bytes.length; i++) arr.push(bytes.charCodeAt(i));
+  const ml = arr.length;
+  arr.push(0x80);
+  while ((arr.length % 64) !== 56) arr.push(0);
+  const bitLen = ml * 8;
+  for (let i = 7; i >= 0; i--) arr.push((bitLen >>> (i * 8)) & 0xff);
+  let h0 = 0x67452301, h1 = 0xEFCDAB89, h2 = 0x98BADCFE, h3 = 0x10325476, h4 = 0xC3D2E1F0;
+  const w = new Array(80);
+  for (let off = 0; off < arr.length; off += 64) {
+    for (let i = 0; i < 16; i++) {
+      const j = off + i * 4;
+      w[i] = ((arr[j] << 24) | (arr[j + 1] << 16) | (arr[j + 2] << 8) | arr[j + 3]) >>> 0;
+    }
+    for (let i = 16; i < 80; i++) w[i] = rotl(w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16], 1) >>> 0;
+    let a = h0, b = h1, c = h2, d = h3, e = h4;
+    for (let i = 0; i < 80; i++) {
+      let f, k;
+      if (i < 20) { f = (b & c) | ((~b) & d); k = 0x5A827999; }
+      else if (i < 40) { f = b ^ c ^ d; k = 0x6ED9EBA1; }
+      else if (i < 60) { f = (b & c) | (b & d) | (c & d); k = 0x8F1BBCDC; }
+      else { f = b ^ c ^ d; k = 0xCA62C1D6; }
+      const temp = (rotl(a, 5) + f + e + k + w[i]) >>> 0;
+      e = d; d = c; c = rotl(b, 30) >>> 0; b = a; a = temp;
+    }
+    h0 = (h0 + a) >>> 0; h1 = (h1 + b) >>> 0; h2 = (h2 + c) >>> 0; h3 = (h3 + d) >>> 0; h4 = (h4 + e) >>> 0;
+  }
+  return [h0, h1, h2, h3, h4].map((h) => ("00000000" + h.toString(16)).slice(-8)).join("");
+}
+
+export function makeFlagId(ref, kind, ki, heard, wavSha) {
+  const raw = String(ref || "") + "|" + String(kind || "") + "|" + (ki == null ? "" : String(ki)) + "|" + (heard ? norm(heard) : "") + "|" + String(wavSha || "").slice(0, 16);
+  return sha1hex(raw).slice(0, 12);
+}
+
+function neighborTime(ops, asr, ki, which) {
+  // previous or next matched/sub ASR time around KJV index ki
+  let prev = null, next = null;
+  for (const [kind, i, j] of ops || []) {
+    if ((kind !== "match" && kind !== "sub" && kind !== "archaic" && kind !== "swap") || i == null || j == null || !asr[j]) continue;
+    const t0 = asr[j].start != null ? Number(asr[j].start) : null;
+    const t1 = asr[j].end != null ? Number(asr[j].end) : t0;
+    if (i < ki) prev = t1;
+    if (i > ki && next == null) next = t0;
+  }
+  return which === "prev" ? prev : next;
+}
+
+/** Map internal flags to VideoBot recorder fields. */
+export function toRecorderFlags(flags, checked, opts = {}) {
+  const kjv = (checked && checked.kjv) || [];
+  const asr = (checked && checked.asr) || [];
+  const ops = (checked && checked.ops) || [];
+  const wav = opts.wav || opts.file || "";
+  const ref = opts.ref || "";
+  const sha = opts.wavSha || opts.sha || "";
+  const out = [];
+  for (const f of flags || []) {
+    const kind = f.kind || (f.type === "sub" ? "swap" : f.type);
+    const ki = f._ki;
+    const aj = f._aj;
+    let timeS = (f.start != null && !Number.isNaN(Number(f.start))) ? Number(f.start) : null;
+    let timeE = (f.end != null && !Number.isNaN(Number(f.end))) ? Number(f.end) : null;
+    if (kind === "missing" && (timeS == null || timeE == null || timeS >= timeE)) {
+      const prev = neighborTime(ops, asr, ki, "prev");
+      const next = neighborTime(ops, asr, ki, "next");
+      if (prev != null) timeS = Math.max(0, prev);
+      else if (next != null) timeS = Math.max(0, next - 0.2);
+      if (timeE == null) timeE = timeS;
+    }
+    if (timeS != null) timeS = Math.max(0, Math.round(timeS * 1000) / 1000);
+    if (timeE != null) timeE = Math.max(timeS || 0, Math.round(timeE * 1000) / 1000);
+    let ctx = null;
+    if (kind === "extra") {
+      const insertAt = ki != null ? ki : (ops.find(([k, _i, j]) => j === aj) ? ki : null);
+      // insertion point: first following KJV index, or end
+      let at = kjv.length;
+      for (const [knd, i2, j2] of ops) {
+        if (j2 != null && aj != null && j2 > aj && i2 != null) { at = i2; break; }
+        if (knd !== "extra" && i2 != null) at = i2 + 1;
+      }
+      ctx = extraContext(kjv, at, f.asr || f.heard);
+    } else if (ki != null) {
+      ctx = kjvContext(kjv, ki);
+    }
+    const expected = kind === "extra" ? null : (displayWord(f.kjv) || null);
+    const heard = kind === "missing" ? null : (displayWord(f.asr) || null);
+    const rec = {
+      wav,
+      time_s: timeS,
+      expected,
+      heard,
+      kind,
+      confidence: f.confidence || null,
+      context: ctx,
+      id: f.id || makeFlagId(ref, kind, ki, kind === "missing" ? null : (f.asr || heard), sha),
+      type: kind,
+      kjv: f.kjv || null,
+      asr: f.asr || null,
+      word_prob: f.word_prob,
+      wav_start_s: timeS,
+      wav_end_s: timeE,
+    };
+    rec.message = failLine(rec);
+    out.push(rec);
+  }
+  return out;
+}
+
+export function failLine(f) {
+  const kind = (f && (f.kind || f.type)) || "";
+  if (kind === "missing") return 'Fail: missing word "' + (f.expected || displayWord(f.kjv) || "") + '"';
+  if (kind === "extra") return 'Fail: extra word "' + (f.heard || displayWord(f.asr) || "") + '"';
+  return "Fail: heard " + (f.heard || displayWord(f.asr) || "") + ". Did you mean " + (f.expected || displayWord(f.kjv) || "") + "?";
 }
 
 export function issueLines(flags, opts = {}) {
   const lines = [];
   for (const f of flags || []) {
-    if (f.type === "missing") lines.push("Missing word: " + displayWord(f.kjv));
-    else if (f.type === "extra") lines.push("Extra word: " + displayWord(f.asr));
-    else lines.push("Heard '" + displayWord(f.asr) + "' instead of '" + displayWord(f.kjv) + "'");
+    const rec = f.kind && f.message ? f : { ...f, kind: f.kind || (f.type === "sub" ? "swap" : f.type), expected: f.expected || displayWord(f.kjv), heard: f.heard || displayWord(f.asr) };
+    let line = rec.message || failLine(rec);
+    if (rec.context && (rec.kind === "missing" || rec.kind === "extra" || rec.kind === "archaic" || rec.kind === "swap")) {
+      line = line + "  " + rec.context;
+    }
+    lines.push(line);
   }
   if (opts && opts.unclearEnd) lines.push("Couldn't hear the end clearly.");
   return lines;
@@ -564,8 +759,12 @@ async function gpuAdapterAvailable() {
 function applyEnv(env) {
   if (!env) return;
   env.allowLocalModels = false;
-  env.useBrowserCache = true;
-  env.useCustomCache = false;
+  env.useBrowserCache = false;
+  env.useCustomCache = true;
+  env.customCache = {
+    match: (req) => caches.open("vbv-transformers").then((c) => c.match(req)),
+    put: (req, res) => caches.open("vbv-transformers").then((c) => c.put(req, res))
+  };
   try {
     if (env.backends && env.backends.onnx && env.backends.onnx.wasm) {
       env.backends.onnx.wasm.numThreads = 1; // GitHub Pages has no COOP/COEP
@@ -865,7 +1064,7 @@ export function isStrongFlag(f) {
   const a = norm(f && f.kjv), b = norm(f && f.asr);
   if (f.type === "missing") return !!a;
   if (f.type === "extra") return !!b;
-  if (f.type === "sub") return !!(a || b);
+  if (f.type === "sub" || f.type === "swap" || f.type === "archaic") return !!(a || b);
   return false;
 }
 
@@ -903,7 +1102,7 @@ export function isUnpromptedNameGarble(f, pass1, kjvText) {
     }
     return false;
   }
-  if (f.type === "sub" && names.has(a) && pass1MatchedName(pass1, a)) {
+  if ((f.type === "sub" || f.type === "swap" || f.type === "archaic") && names.has(a) && pass1MatchedName(pass1, a)) {
     if (!b) return true;
     if (COMMON_ASR.has(b)) return true;
     if (b.length <= Math.max(3, a.length - 3)) return true;
@@ -939,7 +1138,7 @@ export function pass1ExactMatch(pass1, kjvNorm) {
  */
 export function isPass2GarbleOfMatchedWord(f, pass1, kjvText) {
   if (isUnpromptedNameGarble(f, pass1, kjvText)) return true;
-  if (!f || f.type !== "sub") return false;
+  if (!f || (f.type !== "sub" && f.type !== "swap" && f.type !== "archaic")) return false;
   const a = norm(f.kjv), b = norm(f.asr);
   if (!a || !b || !pass1ExactMatch(pass1, a)) return false;
   if (isCapped(f.kjv) && isCapped(f.asr) && Math.min(a.length, b.length) >= 5 && editDistance(a, b) >= 3) return false;
@@ -971,7 +1170,7 @@ export function verifyShouldKeep(f) {
   if (!f) return false;
   if (f.type === "missing") return !!norm(f.kjv);
   if (f.type === "extra") return !!norm(f.asr);
-  if (f.type === "sub") return !!(norm(f.kjv) || norm(f.asr));
+  if (f.type === "sub" || f.type === "swap" || f.type === "archaic") return !!(norm(f.kjv) || norm(f.asr));
   return false;
 }
 
@@ -1083,10 +1282,15 @@ export async function checkAudio(wav, text, callOpts = {}) {
       pass2Transcript: (verifyPass.words || []).map((w) => w.word).join(" "),
     };
   }
-  const issues = issueLines(checked.flags, { unclearEnd: checked.unclearEnd });
-  const note = formatNote(checked.flags, { unclearEnd: checked.unclearEnd });
+  const recFlags = toRecorderFlags(checked.flags, checked, {
+    wav: callOpts.wavName || callOpts.file || "",
+    ref: callOpts.ref || "",
+    wavSha: callOpts.wavSha || "",
+  });
+  const issues = issueLines(recFlags, { unclearEnd: checked.unclearEnd });
+  const note = formatNote(recFlags, { unclearEnd: checked.unclearEnd });
   return {
-    flags: checked.flags,
+    flags: recFlags,
     issues,
     coverage: checked.coverage,
     ops: checked.ops,
@@ -1128,6 +1332,7 @@ const api = {
   buildPromptDecoderIds, vocabPrompt, speechBounds, dropTrailingHallucinations,
   isEarlyCutoff, mergeTail, firstPassDoubt, hasNearMiss, hasLowConfidence,
   isStrongFlag, verifyShouldKeep, mergePassFlags, isUnpromptedNameGarble, pass1ExactMatch, isPass2GarbleOfMatchedWord,
+  isUnusualKjv, kjvContext, extraContext, makeFlagId, toRecorderFlags, failLine,
   ARCHAIC, FUNC, HALLUC, CLOSED, NEAR, MODEL_ID, WHISPER_EN,
 };
 export default api;
