@@ -1451,6 +1451,35 @@ html {
   color: var(--color-muted);
 }
 
+.vbv-checking-banner {
+  margin: 0 0 calc(16 * var(--scale) * 1px);
+  padding: calc(12 * var(--scale) * 1px) calc(16 * var(--scale) * 1px);
+  border: 2px solid var(--color-fg);
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: var(--font-ui);
+  font-size: max(22px, var(--fs-28));
+  font-weight: var(--font-weight-bold);
+  line-height: 1.4;
+}
+.vbv-gate-row.is-playing { outline: 2px solid var(--color-fg); outline-offset: 4px; }
+.vbv-gate-row-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 0.4em;
+}
+.vbv-gate-row-actions .vbv-btn {
+  flex: 1 1 auto;
+  min-height: 48px;
+  min-width: 48px;
+  padding: 8px 14px;
+  font-family: var(--font-ui);
+  font-size: max(18px, var(--fs-28));
+  font-weight: var(--font-weight-bold);
+}
+.vbv-gate-row-actions .vbv-btn.is-playing { border-width: 3px; }
 .vbv-stitch-actions {
   display: flex;
   gap: calc(20 * var(--scale) * 1px);
@@ -8102,11 +8131,41 @@ var VBVRec = (() => {
     const w = warnWordsSoft(checks), t = w.length ? w.join(", ") : "a small check note";
     return "Small note: " + t + ". You can save this take, or record it again.";
   }
-  function wordCheckScriptUrl() {
+  function wordCheckBaseUrl() {
     const href = (location.pathname.endsWith("/") || /index\.html$/i.test(location.pathname)) ? location.href : location.href + "/";
-    return new URL("word-check.js", new URL(href, location.href)).href;
+    return new URL(".", new URL(href, location.href)).href;
+  }
+  function wordCheckScriptUrl() {
+    return new URL("word-check.js", wordCheckBaseUrl()).href;
+  }
+  function wordCheckWorkerUrl() {
+    return new URL("word-check-worker.js", wordCheckBaseUrl()).href;
+  }
+  var _wcWorker = null, _wcWorkerFailed = false, _wcJobN = 0, _activeWordCheckRecorder = null, _sectionPlayback = null;
+  function onWordCheckWorkerMessage(ev) {
+    const rec = _activeWordCheckRecorder;
+    if (rec) applyWordCheckMessage(rec, ev && ev.data);
+  }
+  function getWordCheckWorker() {
+    if (_wcWorker) return _wcWorker;
+    if (_wcWorkerFailed || typeof Worker === "undefined") return null;
+    try {
+      const w = new Worker(wordCheckWorkerUrl(), { type: "module" });
+      w.onmessage = onWordCheckWorkerMessage;
+      w.onerror = function () { /* keep the worker; jobs report their own errors */ };
+      _wcWorker = w;
+      return w;
+    } catch (e) {
+      _wcWorkerFailed = true;
+      return null;
+    }
   }
   function warmupWordCheck() {
+    const w = getWordCheckWorker();
+    if (w) {
+      try { w.postMessage({ type: "warmup" }); } catch (e) {}
+      return Promise.resolve();
+    }
     const go = (api) => {
       if (!api) return;
       globalThis.VBVWordCheck = api;
@@ -8115,6 +8174,94 @@ var VBVRec = (() => {
     };
     if (globalThis.VBVWordCheck) return Promise.resolve(go(globalThis.VBVWordCheck)).catch(function () {});
     return import(wordCheckScriptUrl()).then((m) => go(m.default || m.VBVWordCheck || m)).catch(function () {});
+  }
+  function newTakeToken() {
+    return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 10);
+  }
+  function cancelWordCheckVerse(verseId) {
+    const w = getWordCheckWorker();
+    if (w && verseId) try { w.postMessage({ type: "cancel-verse", verseId }); } catch (e) {}
+  }
+  function applyWordCheckMessage(rec, msg) {
+    if (!rec || !msg) return;
+    if (msg.type === "status" && msg.status === "ready") return;
+    const vid = msg.verseId;
+    if (!vid) return;
+    rec.wordChecksById = rec.wordChecksById || {};
+    const cur = rec.wordChecksById[vid];
+    if (!cur || (msg.takeToken && cur.token !== msg.takeToken)) return;
+    if (msg.type === "status") {
+      cur.status = msg.status || cur.status;
+      if (rec.takesById && rec.takesById[vid]) rec.takesById[vid].wordCheckStatus = cur.status;
+      if (rec.state !== V.RECORDING && rec.state !== V.STARTING) rec.emit();
+      return;
+    }
+    if (msg.type !== "result") return;
+    const issues = msg.ok ? (Array.isArray(msg.issues) ? msg.issues.slice() : []) : [];
+    const took = formatWordCheckTook(msg.asr_ms, msg.runtime);
+    cur.status = "done";
+    cur.issues = issues;
+    cur.note = msg.note || "";
+    cur.took = took;
+    cur.runtime = msg.runtime || null;
+    cur.transcript = msg.transcript || "";
+    cur.error = msg.error || null;
+    const take = rec.takesById && rec.takesById[vid];
+    if (take) {
+      take.wordCheckIssues = issues;
+      take.wordCheckStatus = "done";
+      take.wordCheckTook = took;
+      take.wordCheckNote = msg.note || "";
+    }
+    if (rec.take && rec.take.verseId === vid && rec.take.wordCheckToken === msg.takeToken) {
+      rec.take.wordCheckIssues = issues;
+      rec.take.wordCheckStatus = "done";
+      rec.take.wordCheckTook = took;
+      rec.take.wordCheckNote = msg.note || "";
+      rec.wordCheckIssues = issues;
+      rec.wordCheckMessage = issues.length ? issues.join(" \u00b7 ") : (msg.note || "");
+      rec.wordCheckTook = took;
+    }
+    if (rec.state !== V.RECORDING && rec.state !== V.STARTING) rec.emit();
+  }
+  function runMainThreadWordCheck(rec, verseId, takeToken, wav, text) {
+    const started = Date.now();
+    const finish = (issues, note, runtime, transcript, err) => {
+      applyWordCheckMessage(rec, {
+        type: "result", verseId, takeToken, ok: !err,
+        issues: issues || [], note: note || "", asr_ms: Date.now() - started,
+        runtime, transcript: transcript || "", error: err || null
+      });
+    };
+    const run = (api) => {
+      if (!api || !api.checkAudio) { finish([], "", null, "", "no-api"); return; }
+      const onStatus = (s) => applyWordCheckMessage(rec, { type: "status", verseId, takeToken, status: s });
+      applyWordCheckMessage(rec, { type: "status", verseId, takeToken, status: "checking" });
+      return api.checkAudio(wav, text, { onStatus }).then((r) => {
+        finish((r && r.issues) || [], r && r.note, (r && r.runtime) || (api.getRuntime && api.getRuntime()), r && r.transcript);
+      }).catch((e) => finish([], "", null, "", String(e && e.message || e)));
+    };
+    if (globalThis.VBVWordCheck && VBVWordCheck.checkAudio) return run(VBVWordCheck);
+    return import(wordCheckScriptUrl()).then((m) => run(m.default || m.VBVWordCheck || m)).catch((e) => finish([], "", null, "", String(e && e.message || e)));
+  }
+  function enqueueWordCheck(rec, { verseId, takeToken, wav, text }) {
+    rec.wordChecksById = rec.wordChecksById || {};
+    rec.wordChecksById[verseId] = { token: takeToken, status: "queued", issues: [], note: "", took: "", runtime: null, startedAt: Date.now() };
+    const take = (rec.takesById && rec.takesById[verseId]) || (rec.take && rec.take.verseId === verseId ? rec.take : null);
+    if (take) {
+      take.wordCheckToken = takeToken;
+      take.wordCheckStatus = "queued";
+      take.wordCheckIssues = [];
+    }
+    if (!wav || !text) return;
+    const w = getWordCheckWorker();
+    if (w) {
+      // Always copy so take.wav is never detached by postMessage transfer.
+      const copy = wav.slice(0);
+      w.postMessage({ type: "enqueue", jobId: ++_wcJobN, verseId, takeToken, wav: copy, text }, [copy]);
+      return;
+    }
+    runMainThreadWordCheck(rec, verseId, takeToken, wav, text);
   }
   function formatWordCheckTook(ms, runtime) {
     const s = Math.max(0, Number(ms) / 1000);
@@ -8281,6 +8428,8 @@ var VBVRec = (() => {
       this.index = 0;
       this.statuses = {};
       this.takesById = {};
+      this.wordChecksById = {};
+      _activeWordCheckRecorder = this;
       this.gen = 0;
       this.mic = null;
       this.take = null;
@@ -8448,18 +8597,17 @@ var VBVRec = (() => {
       else if (gateOverall(r.checks) === "WARN") this.message = warnNote(r.checks);
       try { warmupWordCheck(); } catch (e) {}
       this.go(r.hardFail ? "failcheck" : "ready");
-      const checked = startWordCheck(this, g);
       if (r.hardFail) try { localStorage.setItem("vbv.lastFail.v1", JSON.stringify({ at: (/* @__PURE__ */ new Date()).toISOString(), id: this.verseId, sr: this.mic && this.mic.sampleRate, checks: r.checks, meta: r.meta })); } catch (e) {}
+      const verseId = this.verseId;
+      const takeToken = newTakeToken();
+      this.take.wordCheckToken = takeToken;
+      cancelWordCheckVerse(verseId);
+      enqueueWordCheck(this, { verseId, takeToken, wav: this.take.wav, text: verseText });
       if (r.hardFail) return;
       if (this.autoSave) {
-        const issues = await checked;
-        if (g !== this.gen) return;
-        if (!issues.length) {
-          await this.save();
-          return;
-        }
-        // Word alert stays on the review, before the next verse. Save is not blocked.
-        this.emit();
+        // Do not wait for the word check. Save at once and move to the next verse.
+        await this.save();
+        return;
       }
     }
     /**
@@ -8588,6 +8736,7 @@ var VBVRec = (() => {
     }
     async close() {
       await this.cancel();
+      if (_activeWordCheckRecorder === this) _activeWordCheckRecorder = null;
       if (this._unsub) this._unsub();
       if (this.storage && this.storage.stop) this.storage.stop();
       if (this.mic) await this.mic.close();
@@ -8842,23 +8991,36 @@ var VBVRec = (() => {
       const overall = checks ? gateOverall(checks) : st === V.SAVED ? "PASS" : null;
       const takeObj = take || (rec.take && rec.take.verseId === vid ? rec.take : null);
       const notes = checks ? gateIssues(checks, rec.gate || {}).map((x) => x.message) : [];
-      const wordAlerts = (takeObj && takeObj.wordCheckIssues) || (vid === id && rec.wordCheckIssues) || [];
+      const wc = rec.wordChecksById && rec.wordChecksById[vid];
+      const wcStatus = (wc && wc.status) || (takeObj && takeObj.wordCheckStatus) || "";
+      const checking = wcStatus === "queued" || wcStatus === "checking" || wcStatus === "checking-again";
+      const wordAlerts = checking ? [] : ((wc && wc.status === "done" && wc.issues) || (takeObj && takeObj.wordCheckIssues) || (vid === id && rec.wordCheckIssues) || []);
+      let reason = checks ? gateReason(checks, rec.gate) : st === V.SAVED ? "Ready to stitch." : "";
+      if (checking) reason = wcStatus === "checking-again" ? "Checking again…" : "Checking words…";
+      const hasWav = !!(takeObj && takeObj.wav) || st === V.SAVED;
       return {
         id: vid,
         short: shortRef(vid),
         ref: refOf(vid),
         result: overall,
-        reason: checks ? gateReason(checks, rec.gate) : st === V.SAVED ? "Ready to stitch." : "",
+        reason,
         notes,
         wordAlerts,
+        wordCheckStatus: wcStatus,
+        checking,
+        hasWav,
+        playing: !!(!_sectionPlayback ? false : _sectionPlayback.vid === vid),
         upload: q ? q.state : st === V.SAVED ? "saved" : null
       };
     });
     const warns = rows.filter((r) => r.result === "WARN");
     const fails = rows.filter((r) => r.result === "FAIL");
+    const wordFlagged = rows.filter((r) => r.wordAlerts && r.wordAlerts.length);
+    const checkingLeft = rows.filter((r) => r.checking).length;
     const pending = queue.filter((i) => i.state === "saving" || i.state === "failed" || i.state === "needs-signin");
     const canStitch = !fails.length && !pending.length;
-    const problem = fails[0] || warns[0];
+    const problem = fails[0] || wordFlagged[0] || warns[0];
+    const checkingBanner = checkingLeft ? ("Checking words in background (" + checkingLeft + (checkingLeft === 1 ? " verse" : " verses") + " left)…") : "";
     const stem = rec.unit && rec.unit.stem || rec.passage || "";
     const allLocal = ids.length && ids.every((vid) => rec.statuses[vid] === V.SAVED);
     const allUploaded = allLocal && pending.length === 0;
@@ -8871,6 +9033,8 @@ var VBVRec = (() => {
     let warnCopy = "";
     if (fails.length) {
       warnCopy = `A check failed on ${fails.map((r) => r.ref).join(", ")}. Record ${fails.length === 1 ? "that verse" : "those verses"} again before stitching.`;
+    } else if (wordFlagged.length) {
+      warnCopy = `A word didn't match on ${wordFlagged.map((r) => r.ref).join(", ")}. Have a listen and record again if a word was missed or added. Stitch is not blocked.`;
     } else if (warns.length) {
       warnCopy = `${warns.length === 1 ? warns[0].ref.replace(/^.* /, "Verse ") + " has a small note" : warns.length + " verses have a small note"}. You can record ${warns.length === 1 ? "it" : "them"} again, or keep ${warns.length === 1 ? "this take" : "these takes"}.`;
       if (warns.length === 1) {
@@ -8879,6 +9043,8 @@ var VBVRec = (() => {
     }
     if (pending.length) {
       completeNote = pending.length === 1 ? "One verse is still uploading. Stitch waits until every verse is saved." : `${pending.length} verses are still uploading. Stitch waits until every verse is saved.`;
+    } else if (checkingLeft) {
+      completeNote = "Word checks are still finishing in the background. You can stitch when you are ready; a word alert never blocks Stitch now.";
     }
     const heading = allUploaded ? `${stem}  \xB7  all ${ids.length} verses saved` : `${stem}  \xB7  all ${ids.length} verses recorded`;
     return {
@@ -8908,7 +9074,9 @@ var VBVRec = (() => {
       notes: rec.take && rec.take.checks ? gateIssues(rec.take.checks, rec.gate || {}).map((x) => x.message) : [],
       gateRows: rows,
       heading,
-      completeBlurb: "Checks on each verse. A FAIL names the verses to record again. A WARN needs your OK.",
+      checkingBanner,
+      checkingLeft,
+      completeBlurb: "Checks on each verse. A FAIL names the verses to record again. A word alert asks you to listen again; it never blocks Stitch now.",
       completeNote,
       warnCopy,
       pending,
@@ -9087,6 +9255,7 @@ var VBVRec = (() => {
   function renderComplete(root, model) {
     root.appendChild(el("h1", { class: "vbv-complete-h", text: model.heading }));
     root.appendChild(el("p", { class: "vbv-complete-blurb", text: model.completeBlurb }));
+    if (model.checkingBanner) root.appendChild(el("p", { class: "vbv-checking-banner", text: model.checkingBanner, role: "status" }));
     const grid = el("div", { class: "vbv-gate-grid" });
     const mid = Math.ceil(model.gateRows.length / 2) || 1;
     for (const colRows of [model.gateRows.slice(0, mid), model.gateRows.slice(mid)]) {
@@ -9095,14 +9264,27 @@ var VBVRec = (() => {
         const row = el("div", { class: "vbv-gate-row" });
         if (r.result === "WARN" || r.result === "FAIL") row.dataset.result = r.result;
         if (r.wordAlerts && r.wordAlerts.length) row.dataset.wordAlert = "1";
+        if (r.playing) row.classList.add("is-playing");
         row.appendChild(el("span", { class: "vbv-gate-ref", text: r.short }));
         const mark = el("span", { class: "vbv-gate-mark", text: r.result || "\u2014", dataset: { result: r.result || "" } });
         row.appendChild(mark);
         const reason = el("span", { class: "vbv-gate-reason" });
-        const blocks = issueBlocks(r.wordAlerts, r.notes);
-        if (blocks) reason.appendChild(blocks);
-        else if (r.reason) reason.appendChild(document.createTextNode(r.reason));
+        if (r.checking) reason.appendChild(el("p", { class: "vbv-message-note", text: r.reason, role: "status" }));
+        else {
+          const blocks = issueBlocks(r.wordAlerts, r.notes);
+          if (blocks) reason.appendChild(blocks);
+          else if (r.reason) reason.appendChild(document.createTextNode(r.reason));
+        }
         row.appendChild(reason);
+        const actions = el("div", { class: "vbv-gate-row-actions" });
+        if (r.hasWav) {
+          const playLab = r.playing ? "Stop" : "Play";
+          const play = el("button", { type: "button", class: "vbv-btn vbv-btn-secondary" + (r.playing ? " is-playing" : ""), "data-action": "play", "data-id": r.id, "aria-label": playLab + " " + r.ref, text: playLab });
+          actions.appendChild(play);
+        }
+        const again = el("button", { type: "button", class: "vbv-btn " + ((r.wordAlerts && r.wordAlerts.length) || r.result === "FAIL" ? "vbv-btn-primary" : "vbv-btn-secondary"), "data-action": "rerecord", "data-id": r.id, "aria-label": "Record " + r.ref + " again", text: "Record again" });
+        actions.appendChild(again);
+        row.appendChild(actions);
         col.appendChild(row);
       }
       grid.appendChild(col);
@@ -9227,17 +9409,62 @@ var VBVRec = (() => {
       }
     };
   }
-  async function playTake(rec) {
-    if (!rec.take || !rec.take.wav || typeof Audio === "undefined") return;
-    const blob = rec.take.wav instanceof Blob ? rec.take.wav : new Blob([rec.take.wav], { type: "audio/wav" });
+  function stopSectionPlayback() {
+    const p = _sectionPlayback;
+    _sectionPlayback = null;
+    if (!p) return;
+    try { p.audio.pause(); } catch (e) {}
+    try { p.audio.removeAttribute("src"); p.audio.load(); } catch (e) {}
+    try { URL.revokeObjectURL(p.url); } catch (e) {}
+  }
+  function wavLooksPresent(wav) {
+    if (!wav) return false;
+    if (typeof wav.byteLength === "number") return wav.byteLength > 0;
+    if (typeof wav.size === "number") return wav.size > 0;
+    return true;
+  }
+  async function wavForVerse(rec, vid) {
+    const take = (rec.takesById && rec.takesById[vid]) || (rec.take && rec.take.verseId === vid ? rec.take : null);
+    if (take && wavLooksPresent(take.wav)) return take.wav;
+    if (rec.store && rec.store.acceptedTake) {
+      try {
+        const acc = await rec.store.acceptedTake(vid);
+        if (acc && wavLooksPresent(acc.wav)) {
+          rec.takesById = rec.takesById || {};
+          rec.takesById[vid] = Object.assign(rec.takesById[vid] || acc, { wav: acc.wav });
+          return acc.wav;
+        }
+      } catch (e) {}
+    }
+    return null;
+  }
+  async function playTake(rec, vid) {
+    const id = vid || (rec.take && rec.take.verseId);
+    if (!id || typeof Audio === "undefined") return;
+    if (_sectionPlayback && _sectionPlayback.vid === id) {
+      stopSectionPlayback();
+      if (rec.state !== V.RECORDING && rec.state !== V.STARTING) rec.emit();
+      return;
+    }
+    stopSectionPlayback();
+    const wav = await wavForVerse(rec, id);
+    if (!wavLooksPresent(wav)) return;
+    const blob = wav instanceof Blob ? wav : new Blob([wav], { type: "audio/wav" });
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
-    audio.onended = () => URL.revokeObjectURL(url);
+    _sectionPlayback = { vid: id, audio, url };
+    audio.onended = () => {
+      if (_sectionPlayback && _sectionPlayback.audio === audio) {
+        stopSectionPlayback();
+        if (rec.state !== V.RECORDING && rec.state !== V.STARTING) rec.emit();
+      }
+    };
     try {
       await audio.play();
-    } catch {
-      URL.revokeObjectURL(url);
+    } catch (e) {
+      stopSectionPlayback();
     }
+    if (rec.state !== V.RECORDING && rec.state !== V.STARTING) rec.emit();
   }
   function dispatchAction(rec, action, id, opts = {}) {
     switch (action) {
@@ -9249,7 +9476,7 @@ var VBVRec = (() => {
       case "save":
         return rec.save();
       case "play":
-        return playTake(rec);
+        return playTake(rec, id);
       case "prev":
         if (rec.index > 0) rec.select(rec.index - 1);
         return;

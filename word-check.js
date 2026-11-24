@@ -36,11 +36,11 @@ const FUNC = new Set([ // align_unit.py:44-51
 
 const WORD_RE = /[A-Za-z0-9]/; // align_unit.py:53
 
-const HALLUC = new Set([ // align_unit.py:194-199, plus common closers
+const HALLUC = new Set([ // trailing closers / fillers only; never "you" or "for"
   "thank", "thanks", "watching", "bye", "goodbye", "sorry", "really", "agree",
-  "subscribe", "please", "like", "comment", "sample", "simple", "teaching",
-  "owner", "owls", "amen", "okay", "ok", "alright", "right", "yeah", "yep",
-  "uh", "um", "you", "for", "watching", "bye", "peace",
+  "subscribe", "please", "comment", "sample", "simple", "teaching",
+  "owner", "owls", "amen", "okay", "ok", "alright", "yeah", "yep",
+  "uh", "um", "peace",
 ]);
 
 // Trailing closer phrases dropped only when they sit after the heard verse, in silence.
@@ -115,10 +115,10 @@ function rstripS(s) { // Python str.rstrip("s")
 
 // Near-miss pairs on top of VideoBot's ARCHAIC set.
 const NEAR = {
-  thee: new Set(["thee", "the", "you"]),
-  the: new Set(["the", "thee"]),
-  thou: new Set(["thou", "though", "you"]),
-  though: new Set(["though", "thou"]),
+  // Keep only systematic ASR slips measured on accurately-read KJV, not real
+  // word differences (thee/the, thou/though) a dyslexic reader may make.
+  thee: new Set(["thee", "you"]),
+  thou: new Set(["thou", "you"]),
   ye: new Set(["ye", "yeah", "you"]),
   yea: new Set(["yea", "yeah", "yes"]),
   yeah: new Set(["yeah", "ye", "yea"]),
@@ -126,6 +126,11 @@ const NEAR = {
   crime: new Set(["crime", "cry"]),
   doest: new Set(["doest", "dost", "does", "do"]),
   dost: new Set(["dost", "doest", "does", "do"]),
+  // Measured ASR typo-pairs (accurate Jonah readings of rowed/heard).
+  rowed: new Set(["rowed", "rode"]),
+  rode: new Set(["rode", "rowed"]),
+  heard: new Set(["heard", "herd"]),
+  herd: new Set(["herd", "heard"]),
 };
 
 function stemInfl(s) {
@@ -144,24 +149,23 @@ function isCapped(tok) {
 export function equiv(a, b) { // align_unit.py:83-96, plus near-miss
   if (!a || !b) return false;
   if (a === b) return true;
-  if (rstripS(a) === b || rstripS(b) === a) return true;
+  // rstripS is deliberately not used: "hand" vs "hands" is a real slip.
   const sa = ARCHAIC[a] || new Set([a]);
   const sb = ARCHAIC[b] || new Set([b]);
   let inter = false;
   for (const x of sa) { if (sb.has(x)) { inter = true; break; } }
   if (inter || sb.has(a) || sa.has(b)) return true;
-  if (Math.min(a.length, b.length) >= 5 && editDistance(a, b) <= 1) return true;
-  // Short ASR slips (rowed/rode, heard/herd). Keep well/will and son/sun strict.
-  if (editDistance(a, b) <= 1 && Math.min(a.length, b.length) >= 4 && commonPrefixLen(a, b) >= 2) return true;
   const na = NEAR[a], nb = NEAR[b];
   if ((na && na.has(b)) || (nb && nb.has(a))) return true;
+  // One-letter ASR typo on longer content words only. Function words stay
+  // strict so then/than, that/than and similar slips are flagged.
+  if (!FUNC.has(a) && !FUNC.has(b) && Math.min(a.length, b.length) >= 5 && editDistance(a, b) <= 1) return true;
   const sta = stemInfl(a), stb = stemInfl(b);
   if (sta !== a || stb !== b) {
     if (sta && stb && (sta === stb || (Math.min(sta.length, stb.length) >= 4 && editDistance(sta, stb) <= 1))) return true;
   }
-  // Longer-word near-miss (observe/deserve, Amittai/Amatai). Short distinct
-  // words (man/men, son/sun) stay strict.
-  if (Math.min(a.length, b.length) >= 6 && editDistance(a, b) <= 2) return true;
+  // Longer d<=2 (observe/deserve) is NOT accepted here. Proper-name slips
+  // such as Amittai/Amatai are handled in equivTokens via capitalisation.
   return false;
 }
 
@@ -182,6 +186,9 @@ function asrProb(item) {
   return (p == null || Number.isNaN(Number(p))) ? null : Number(p);
 }
 
+// Function words use a cheaper indel (0.35 vs 0.8) so a missed "the" or "and"
+// is aligned as its own missing/extra op instead of being absorbed into a
+// neighbouring content-word substitution. Weights are not a licence to drop flags.
 export function alignTokens(asr, kjv) { // align_unit.py:99-147
   const n = kjv.length, m = asr.length;
   const INF = 1e9;
@@ -288,39 +295,30 @@ export function dropTrailingHallucinations(flags, asr, opts = {}) {
   let out = flags.slice();
   const speechEnd = opts.speechEnd;
   const slack = opts.slack != null ? opts.slack : 0.35;
-  // last matched/sub KJV word time, if we can see it on the aligned ASR side
   let lastMatchEnd = opts.lastMatchEnd;
   if (lastMatchEnd == null && asr && asr.length) {
     for (const w of asr) {
       if (w && w.end != null && !Number.isNaN(Number(w.end))) lastMatchEnd = Math.max(lastMatchEnd == null ? -Infinity : lastMatchEnd, Number(w.end));
     }
   }
-  // Existing VideoBot trailing pop for HALLUC / low-prob / FUNC
+  // Only drop known trailing-silence hallucinations (HALLUC / closer phrases).
+  // Never drop function words or a real verse-final "you" / "for" spoken during speech.
   while (out.length && out[out.length - 1].type === "extra") {
     const last = out[out.length - 1];
     const w = plain(last.asr);
-    const p = last.word_prob;
     const t = extraStart(last, asr);
     const inSilence = speechEnd != null && t != null && t >= speechEnd - slack;
-    const afterVerse = lastMatchEnd == null || t == null || t >= lastMatchEnd - 0.1;
-    if (HALLUC.has(w) || (p != null && p < 0.7) || FUNC.has(w)) {
-      if (t == null || inSilence || (afterVerse && HALLUC.has(w))) out.pop();
-      else break;
-    } else break;
+    if (inSilence && (HALLUC.has(w) || isCloserPhrase([last.asr]))) out.pop();
+    else break;
   }
   let runAt = out.length;
   while (runAt > 0 && out[runAt - 1].type === "extra") runAt--;
   if (runAt < out.length) {
     const run = out.slice(runAt);
     const starts = run.map((f) => extraStart(f, asr));
-    const afterVerse = starts.every((t) => t == null || lastMatchEnd == null || t >= lastMatchEnd - 0.1);
-    const inSilence = speechEnd == null || starts.every((t) => t == null || t >= speechEnd - slack);
-    const phrase = isCloserPhrase(run.map((f) => f.asr)) || run.some((f) => HALLUC.has(plain(f.asr)));
-    // Only drop the whole run if it is a closer (or contains one) and is beyond the verse;
-    // prefer silence, but a known closer phrase just after the last word still counts.
-    if (afterVerse && phrase && (inSilence || isCloserPhrase(run.map((f) => f.asr)))) {
-      out = out.slice(0, runAt);
-    }
+    const inSilence = speechEnd != null && starts.every((t) => t != null && t >= speechEnd - slack);
+    const phrase = isCloserPhrase(run.map((f) => f.asr));
+    if (inSilence && phrase) out = out.slice(0, runAt);
   }
   return out;
 }
@@ -352,8 +350,7 @@ export function flagOps(ops, kjv, asr, verseConf) { // align_unit.py:165-190
     const aw = j != null ? asrWord(asr[j]) : null;
     const kn = kj ? norm(kj) : "", an = aw ? norm(aw) : "";
     if (kind === "sub" && equivTokens(kj, aw)) continue;
-    if (verseConf >= 0.75 && ((FUNC.has(kn) && kind === "missing") || (FUNC.has(an) && kind === "extra")
-        || (FUNC.has(kn) && FUNC.has(an) && kind === "sub"))) continue;
+    // Never suppress function words: every missing, extra, or swapped word is flagged.
     let wp = null;
     if (j != null) wp = asrProb(asr[j]);
     let conf = "high";
@@ -685,6 +682,11 @@ function lookupSpecial(tokenizer, piece, fallback) {
   return fallback;
 }
 
+// Rare KJV content words Whisper otherwise modernises or confuses (measured
+// on accurate Jonah takes: gourd→God/good, smote→smoked). Prompt them, but
+// do not mark them equivalent to the wrong word — a real slip must still flag.
+const RARE_VOCAB = new Set(["gourd", "smote"]);
+
 // Bias rare / archaic spellings and names without feeding the verse as a
 // script to recite. A fluent full-verse decoder prompt makes Whisper write
 // the prompt even when a word was actually missing or swapped.
@@ -695,7 +697,7 @@ export function vocabPrompt(kjvText) {
   for (const t of toks) {
     const n = norm(t);
     if (!n || seen.has(n) || FUNC.has(n)) continue;
-    if (ARCHAIC[n] || NEAR[n] || n.length >= 7 || (isCapped(t) && n.length >= 5)) {
+    if (ARCHAIC[n] || NEAR[n] || RARE_VOCAB.has(n) || n.length >= 7 || (isCapped(t) && n.length >= 5)) {
       out.push(t);
       seen.add(n);
     }
@@ -861,34 +863,115 @@ function isTypoLike(a, b) {
 
 export function isStrongFlag(f) {
   const a = norm(f && f.kjv), b = norm(f && f.asr);
-  if (f.type === "missing") return !!(a && !FUNC.has(a));
-  if (f.type === "extra") return !!(b && !FUNC.has(b));
-  if (f.type === "sub") {
-    if (!a || !b) return true;
-    if (FUNC.has(a) && FUNC.has(b)) return false;
-    if (isTypoLike(a, b)) return false;
-    return true;
+  if (f.type === "missing") return !!a;
+  if (f.type === "extra") return !!b;
+  if (f.type === "sub") return !!(a || b);
+  return false;
+}
+
+function promptedNameSet(kjvText) {
+  const names = new Set();
+  for (const tok of tokensOf(kjvText || "")) {
+    if (isCapped(tok) && norm(tok).length >= 5) names.add(norm(tok));
+  }
+  return names;
+}
+
+function pass1MatchedName(pass1, name) {
+  if (!name) return false;
+  for (const [kind, i] of (pass1 && pass1.ops) || []) {
+    if (kind === "match" && i != null && norm(pass1.kjv[i]) === name) return true;
   }
   return false;
 }
 
-// Verifier flags that should override a clean prompted pass. Subs are only
-// kept when they look like a real name swap or a badly fragmented long word,
-// not when unprompted ASR merely mishears (Nineveh→never, gourd→God).
-export function verifyShouldKeep(f) {
+/**
+ * Pass 2 sometimes garbles a proper name that Pass 1 already matched via the
+ * vocab prompt (Nineveh→never, Amittai→mid tie). Ignore only those.
+ * Every other missing / extra / swapped word from either pass is kept.
+ */
+export function isUnpromptedNameGarble(f, pass1, kjvText) {
+  const names = promptedNameSet(kjvText);
+  if (!names.size) return false;
   const a = norm(f && f.kjv), b = norm(f && f.asr);
-  if (f.type === "missing") return !!(a && !FUNC.has(a));
-  if (f.type === "extra") return !!(b && !FUNC.has(b) && !COMMON_ASR.has(b));
-  if (f.type !== "sub" || !a || !b || isTypoLike(a, b)) return false;
-  if (FUNC.has(a) && FUNC.has(b)) return false;
-  if (COMMON_ASR.has(b)) return false;
-  const d = editDistance(a, b);
-  // Long name reduced to a fragment (Amittai → "A").
-  if (a.length >= 6 && b.length <= a.length - 3) return true;
-  // Distinct proper names (Jonah → Nineveh / Jonimha).
-  if (isCapped(f.kjv) && isCapped(f.asr) && b.length >= 5 && d >= 3) return true;
-  // Short content word swapped for a clearly different word (son → Sir).
-  if (a.length <= 4 && !FUNC.has(a) && d >= 2) return true;
+  if (f.type === "missing" && names.has(a) && pass1MatchedName(pass1, a)) return true;
+  if (f.type === "extra") {
+    if (!b) return false;
+    if (COMMON_ASR.has(b) && [...names].some((n) => pass1MatchedName(pass1, n))) return true;
+    for (const n of names) {
+      if (pass1MatchedName(pass1, n) && (n.startsWith(b) || b.length <= 3 && n.includes(b))) return true;
+    }
+    return false;
+  }
+  if (f.type === "sub" && names.has(a) && pass1MatchedName(pass1, a)) {
+    if (!b) return true;
+    if (COMMON_ASR.has(b)) return true;
+    if (b.length <= Math.max(3, a.length - 3)) return true;
+    if (!isCapped(f.asr) && editDistance(a, b) >= 2) return true;
+    return false;
+  }
+  return false;
+}
+
+function asrWordOf(item) {
+  return typeof item === "string" ? item : (item && item.word) || "";
+}
+
+/** True when Pass 1 heard this KJV word exactly (not merely a near-miss). */
+export function pass1ExactMatch(pass1, kjvNorm) {
+  if (!kjvNorm || !pass1) return false;
+  for (const [kind, i, j] of pass1.ops || []) {
+    if (kind !== "match" || i == null || j == null) continue;
+    const kn = norm(pass1.kjv[i]);
+    const an = norm(asrWordOf(pass1.asr[j]));
+    if (kn === kjvNorm && an === kjvNorm) return true;
+  }
+  return false;
+}
+
+/**
+ * Drop a Pass 2 substitution of a word Pass 1 already heard exactly, when
+ * Pass 2 only offers a phonetic/archaic garble (compassed→encompassed,
+ * spake→speak). Still keep a clear proper-name swap (Jonah vs Nineveh),
+ * which is the case the second listen is meant to catch, and always keep
+ * Pass 2 missing/extra flags (a prompted first listen can fill in a skipped
+ * "that" or miss a repeated word).
+ */
+export function isPass2GarbleOfMatchedWord(f, pass1, kjvText) {
+  if (isUnpromptedNameGarble(f, pass1, kjvText)) return true;
+  if (!f || f.type !== "sub") return false;
+  const a = norm(f.kjv), b = norm(f.asr);
+  if (!a || !b || !pass1ExactMatch(pass1, a)) return false;
+  if (isCapped(f.kjv) && isCapped(f.asr) && Math.min(a.length, b.length) >= 5 && editDistance(a, b) >= 3) return false;
+  if (a.includes(b) || b.includes(a)) return true;
+  if (isTypoLike(a, b) || editDistance(a, b) <= 2) return true;
+  const sta = stemInfl(a), stb = stemInfl(b);
+  if (sta && stb && sta === stb) return true;
+  return false;
+}
+
+export function mergePassFlags(pass1, pass2, kjvText) {
+  const first = (pass1 && pass1.flags) || [];
+  const second = (pass2 && pass2.flags) || [];
+  const keyOf = (f) => (f.type || "") + "|" + norm(f.kjv) + "|" + norm(f.asr);
+  const out = first.slice();
+  const seen = new Set(out.map(keyOf));
+  for (const f of second) {
+    const k = keyOf(f);
+    if (seen.has(k)) continue;
+    if (isPass2GarbleOfMatchedWord(f, pass1, kjvText)) continue;
+    out.push(f);
+    seen.add(k);
+  }
+  return out;
+}
+
+// Keep a conservative filter for callers that still use it: never drop FUNC words.
+export function verifyShouldKeep(f) {
+  if (!f) return false;
+  if (f.type === "missing") return !!norm(f.kjv);
+  if (f.type === "extra") return !!norm(f.asr);
+  if (f.type === "sub") return !!(norm(f.kjv) || norm(f.asr));
   return false;
 }
 
@@ -980,30 +1063,25 @@ export async function checkAudio(wav, text, callOpts = {}) {
   let verified = false;
   let verifyFlags = [];
   let secondPass = false;
-  // Robin: one listen by default; a second listen only when the first is in doubt.
-  let doubtReasons = [];
-  if (callOpts.verify === true) doubtReasons = ["forced"];
-  else if (callOpts.verify !== false) doubtReasons = firstPassDoubt(checked, words, speech, kjvText);
-  if (doubtReasons.length) {
+  let doubtReasons = firstPassDoubt(checked, words, speech, kjvText);
+  // Always run both listens in the background unless the caller opts out.
+  if (callOpts.verify !== false) {
     secondPass = true;
     try { if (onStatus) onStatus("checking-again"); } catch {}
     const verifyPass = await transcribePcm(transcriber, audio, "King James Bible.", { ...callOpts, prompt: true });
     const vChecked = checkTranscript(kjvText, verifyPass.words, { speechEnd: speech.end, unclearEnd: false });
-    verifyFlags = (vChecked.flags || []).filter(verifyShouldKeep);
-    if (verifyFlags.length) {
-      verified = true;
-      words = verifyPass.words;
-      checked = { ...vChecked, flags: verifyFlags, unclearEnd: false };
-    } else {
-      // Second listen did not confirm a real missing/extra/swap. Drop typo-like
-      // first-pass slips (rowed/rode, gourd/God) so they do not stand as flags.
-      const kept = (checked.flags || []).filter((f) => {
-        const a = norm(f && f.kjv), b = norm(f && f.asr);
-        if (f.type === "sub" && a && b && (isTypoLike(a, b) || COMMON_ASR.has(b))) return false;
-        return true;
-      });
-      checked = { ...checked, flags: kept };
-    }
+    verifyFlags = vChecked.flags || [];
+    const merged = mergePassFlags(checked, vChecked, kjvText);
+    verified = verifyFlags.length > 0;
+    checked = {
+      ...checked,
+      flags: merged,
+      // Keep Pass 1 transcript (prompted names are usually cleaner). Pass 2
+      // only adds flags that Pass 1 smoothed over.
+      pass2: vChecked,
+      pass2Words: verifyPass.words,
+      pass2Transcript: (verifyPass.words || []).map((w) => w.word).join(" "),
+    };
   }
   const issues = issueLines(checked.flags, { unclearEnd: checked.unclearEnd });
   const note = formatNote(checked.flags, { unclearEnd: checked.unclearEnd });
@@ -1049,7 +1127,8 @@ const api = {
   transcribeWav, checkTake, checkAudio, loadPipeline, resetPipeline, warmup, getRuntime,
   buildPromptDecoderIds, vocabPrompt, speechBounds, dropTrailingHallucinations,
   isEarlyCutoff, mergeTail, firstPassDoubt, hasNearMiss, hasLowConfidence,
+  isStrongFlag, verifyShouldKeep, mergePassFlags, isUnpromptedNameGarble, pass1ExactMatch, isPass2GarbleOfMatchedWord,
   ARCHAIC, FUNC, HALLUC, CLOSED, NEAR, MODEL_ID, WHISPER_EN,
 };
 export default api;
-if (typeof window !== "undefined") window.VBVWordCheck = api;
+if (typeof globalThis !== "undefined") globalThis.VBVWordCheck = api;
