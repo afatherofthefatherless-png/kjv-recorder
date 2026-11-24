@@ -8283,6 +8283,8 @@ var VBVRec = (() => {
       rec.wordCheckTook = took;
     }
     if (rec.state !== V.RECORDING && rec.state !== V.STARTING) rec.emit();
+    rec._reviewWordCheckBusy = false;
+    pumpReviewWordChecks(rec);
   }
   function runMainThreadWordCheck(rec, verseId, takeToken, wav, text) {
     const started = Date.now();
@@ -8327,6 +8329,47 @@ var VBVRec = (() => {
       return;
     }
     runMainThreadWordCheck(rec, verseId, takeToken, wav, text);
+  }
+  // Word checks belong on the end-of-section review, one WAV at a time, so a
+  // recording run does not keep Whisper plus every take in RAM (iPad was
+  // freezing mid-chapter; Ruth 2:15 never reached 00 Inbox).
+  function startReviewWordChecks(rec) {
+    if (!rec || rec._reviewWordChecksStarted) return;
+    rec._reviewWordChecksStarted = true;
+    try { warmupWordCheck(); } catch (e) {}
+    pumpReviewWordChecks(rec);
+  }
+  function pumpReviewWordChecks(rec) {
+    if (!rec || rec._reviewWordCheckBusy) return;
+    const ids = rec.ids || [];
+    const next = ids.find(function (id) {
+      if (rec.statuses[id] !== V.SAVED) return false;
+      const wc = rec.wordChecksById && rec.wordChecksById[id];
+      return !(wc && (wc.status === "done" || wc.status === "queued" || wc.status === "checking" || wc.status === "checking-again"));
+    });
+    if (!next) return;
+    rec._reviewWordCheckBusy = true;
+    const token = (rec.takesById && rec.takesById[next] && rec.takesById[next].wordCheckToken) || newTakeToken();
+    const text = rec.textSource && rec.textSource.readingText ? rec.textSource.readingText(next) : "";
+    const finish = function () { rec._reviewWordCheckBusy = false; };
+    const go = function (wav) {
+      if (wav && text) {
+        enqueueWordCheck(rec, { verseId: next, takeToken: token, wav: wav, text: text });
+        if (rec.takesById && rec.takesById[next] && rec.takesById[next].wav) rec.takesById[next].wav = null;
+        return; // busy stays set until applyWordCheckMessage gets a result
+      }
+      rec.wordChecksById = rec.wordChecksById || {};
+      rec.wordChecksById[next] = Object.assign(rec.wordChecksById[next] || {}, { token: token, status: "done", issues: [], flags: [] });
+      rec._reviewWordCheckBusy = false;
+      pumpReviewWordChecks(rec);
+    };
+    if (rec.store && rec.store.acceptedTake) {
+      Promise.resolve(rec.store.acceptedTake(next)).then(function (acc) {
+        go(acc && acc.wav);
+      }).catch(function () { finish(); pumpReviewWordChecks(rec); });
+      return;
+    }
+    go(rec.takesById && rec.takesById[next] && rec.takesById[next].wav);
   }
   function formatWordCheckTook(ms, runtime) {
     const s = Math.max(0, Number(ms) / 1000);
@@ -8578,6 +8621,7 @@ var VBVRec = (() => {
       else if (this.statuses[this.verseId] === V.SAVED) this.state = V.SAVED;
       await this.persist();
       this.emit();
+      if (this.state === V.CHAPTER_COMPLETE) try { startReviewWordChecks(this); } catch (e) {}
       return this;
     }
     async ensureMic() {
@@ -8588,7 +8632,9 @@ var VBVRec = (() => {
       return this.mic;
     }
     onLost(why) {
+      var mic = this.mic;
       this.mic = null;
+      if (mic && mic.close) try { mic.close(); } catch (e) {}
       if (this.state === V.RECORDING || this.state === V.STARTING) {
         this.gen++;
         this.collecting = false;
@@ -8634,7 +8680,6 @@ var VBVRec = (() => {
     async stop() {
       if (this.state !== V.RECORDING) return;
       const g = this.gen;
-      try { warmupWordCheck(); } catch (e) {}
       this.mic && this.mic.flush && this.mic.flush();
       this.go("stop");
       if (this.flushWaitMs) await new Promise((r2) => setTimeout(r2, this.flushWaitMs));
@@ -8660,14 +8705,18 @@ var VBVRec = (() => {
       this.take = { verseId: this.verseId, createdAt: Date.now(), status: r.hardFail ? "failed" : "review", wav: r.wav, checks: r.checks, meta: r.meta, fileName: verseFileNameOfId(this.verseId) };
       if (r.hardFail) this.message = failMessage(r.checks, this.gate);
       else if (gateOverall(r.checks) === "WARN") this.message = warnNote(r.checks);
-      try { warmupWordCheck(); } catch (e) {}
       this.go(r.hardFail ? "failcheck" : "ready");
       if (r.hardFail) try { localStorage.setItem("vbv.lastFail.v1", JSON.stringify({ at: (/* @__PURE__ */ new Date()).toISOString(), id: this.verseId, sr: this.mic && this.mic.sampleRate, checks: r.checks, meta: r.meta })); } catch (e) {}
       const verseId = this.verseId;
       const takeToken = newTakeToken();
       this.take.wordCheckToken = takeToken;
       cancelWordCheckVerse(verseId);
-      enqueueWordCheck(this, { verseId, takeToken, wav: this.take.wav, text: verseText });
+      // Word alerts only appear on the end-of-section review. Starting Whisper
+      // and copying every WAV into the worker mid-run fills iPad RAM.
+      if (!this.autoSave) {
+        try { warmupWordCheck(); } catch (e) {}
+        enqueueWordCheck(this, { verseId, takeToken, wav: this.take.wav, text: verseText });
+      }
       if (r.hardFail) return;
       if (this.autoSave) {
         // Do not wait for the word check. Save at once and move to the next verse.
@@ -8742,6 +8791,7 @@ var VBVRec = (() => {
       }
       this.lastSave = { ok: true, queued: !!(queued && queued.queued), sha256: queued && queued.sha256 };
       this.statuses[take.verseId] = V.SAVED;
+      take.wav = null; // IndexedDB/Drive already have the bytes; do not keep every take in RAM
       this.takesById[take.verseId] = take;
       this.take = null;
       this.message = "";
@@ -8768,6 +8818,7 @@ var VBVRec = (() => {
           pending: q.filter((i) => i.state === "saving"),
           failed: q.filter((i) => i.state === "failed" || i.state === "needs-signin")
         });
+        try { startReviewWordChecks(this); } catch (e) {}
       } else {
         this.next();
       }
@@ -9568,6 +9619,11 @@ var VBVRec = (() => {
     return true;
   }
   async function wavForVerse(rec, vid) {
+    if (rec && rec.takesById) {
+      for (const id of Object.keys(rec.takesById)) {
+        if (id !== vid && rec.takesById[id] && rec.takesById[id].wav) rec.takesById[id].wav = null;
+      }
+    }
     const take = (rec.takesById && rec.takesById[vid]) || (rec.take && rec.take.verseId === vid ? rec.take : null);
     if (take && wavLooksPresent(take.wav)) return take.wav;
     if (rec.store && rec.store.acceptedTake) {
@@ -10680,9 +10736,8 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
   }
   function isBusy() { var r = handle && handle.recorder; return !!r && (r.state === 'RECORDING' || r.state === 'STARTING' || r.state === 'PROCESSING'); }
   function releaseMic() { var r = handle && handle.recorder; if (r) { r.cancel(); if (r.mic) { try { r.mic.close(); } catch (e) {} r.mic = null; } } }
-  if (KJB.on) KJB.on('tab', function (t) { if (t !== 'recorder') releaseMic(); else { place(); sizeMount(); try { warmupWordCheck(); } catch (e) {} } });
+  if (KJB.on) KJB.on('tab', function (t) { if (t !== 'recorder') releaseMic(); else { place(); sizeMount(); } });
   KJB.mount && section && setMode(localStorage.getItem(MODEKEY) === 'verse' ? 'verse' : 'passage', false);
-  if (window.KJB && KJB.current === 'recorder') try { warmupWordCheck(); } catch (e) {}
 
 
   // ---------- layout: landscape gets a definite height so KJBVR's fit can size the verse; never below 40 CSS px ----------
