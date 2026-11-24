@@ -2454,8 +2454,8 @@ function setInput(blob, name, label) {
   }
 }
 
-// ---- m4.0 Send (whole passage): the raw reading as a WAV into Drive 00 Inbox (same Drive queue and overwrite as verse by verse),
-// then, once Drive confirms it, a request note next to it for VideoBot. VideoBot does the cleaning. Nothing calls VideoBot directly.
+// ---- m4.0 Send (whole passage): the raw reading as a WAV into Drive 00 Inbox (same Drive queue and overwrite as verse by verse).
+// VideoBot picks that WAV up from the inbox. This button does not also send a stitch request. Nothing calls VideoBot directly.
 function sendSay(t, bad) { var el = $('sendStatus'); el.textContent = t; el.classList.toggle('bad', !!bad); el.hidden = !t; }
 function sendReset() { sendSay(''); }
 function passageNames(P) { // 'Genesis 1.1-31', 'Genesis 1.3', 'Genesis 1.29-2.3' (never a colon)
@@ -2758,8 +2758,6 @@ async function sendPassage() {
     for (var c = 0; c < nc; c++) { var d = buf.getChannelData(c); for (var i = 0; i < n; i++) mono[i] += d[i] / nc; }
     var wav = C.encodeWav([mono], buf.sampleRate); mono = null; buf = null;
     await VBV.savePassage(N.wav, wav);
-    await VBV.saveStitchRequest({ name: N.req, book: N.book, chapter: P.start.c === P.end.c ? P.start.c : null, verses: P.count,
-      extra: { mode: 'passage', file: N.wav, from: { c: P.start.c, v: P.start.v }, to: { c: P.end.c, v: P.end.v } } });
     if (inputBlob === blob) { outBlob = blob; TT.sentBlob = blob; TT.sentFor = P.short; }
     sendSay('Saved to Drive. VideoBot will pick it up at its 21:00 check, or ask it now.');
   } catch (e) {
@@ -8704,17 +8702,31 @@ var VBVRec = (() => {
       let queued = null;
       const gate = { overall: gateLabelForSave(take.checks), checks: take.checks };
       if (this.storage && this.storage.saveVerse) {
-        queued = await this.storage.saveVerse(take.verseId, take.wav, {
-          file: take.fileName,
-          take_at: takeAt,
-          retake,
-          duration_s: take.meta && take.meta.durationS,
-          speech_start_s: take.meta && take.meta.onsetInFileS,
-          speech_end_s: take.meta && take.meta.offsetInFileS,
-          resampled: !!(take.meta && take.meta.resampled),
-          ...take.meta,
-          gate
-        });
+        try {
+          queued = await this.storage.saveVerse(take.verseId, take.wav, {
+            file: take.fileName,
+            take_at: takeAt,
+            retake,
+            duration_s: take.meta && take.meta.durationS,
+            speech_start_s: take.meta && take.meta.onsetInFileS,
+            speech_end_s: take.meta && take.meta.offsetInFileS,
+            resampled: !!(take.meta && take.meta.resampled),
+            ...take.meta,
+            gate
+          });
+        } catch (e) {
+          this.lastSave = { ok: false, error: (e && e.message) || String(e) };
+          this.saveError = (e && e.message) || String(e);
+          const k = e && e.kind;
+          if (k === "signin" || k === "auth" || k === "folder") {
+            this.message = "Not signed in to Google Drive. Sign in, then try again.";
+            this.go("auth");
+          } else {
+            this.message = "Not saved. Try again.";
+            this.go("fail");
+          }
+          return;
+        }
       }
       this.lastSave = { ok: true, queued: !!(queued && queued.queued), sha256: queued && queued.sha256 };
       this.statuses[take.verseId] = V.SAVED;
@@ -10394,8 +10406,9 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
       function viaLookup(skip) {
         return lookup(t.file, t.id, tok, skip).then(function (list) { return list.length ? patch(list[0].id) : create(); });
       }
-      var known = (files.get(t.id) || {}).fileId;
-      var p = known ? patch(known).catch(function (e) { if (e.kind === 'http' && e.status === 404) { files.delete(t.id); del('files', t.id).catch(function () {}); return viaLookup(known); } throw e; }) : viaLookup(null);
+      // Same path as a first whole-passage send: find the exact name in 00 Inbox (or the inbox tree) and overwrite, or create in 00 Inbox.
+      // Do not PATCH a remembered fileId that may sit outside 00 Inbox — that is what made verse-by-verse say "Saved" with no WAV in the inbox.
+      var p = viaLookup(null);
       return p.catch(function (e) {
         if (e.kind === 'http' && e.status === 403 && /insufficient|forbidden|appNotAuthorized|cannotModify/i.test(e.reason || '')) throw err('final', 'This page may not replace that file in Drive (it was not made here)', { status: 403 });
         throw e;
@@ -10411,7 +10424,7 @@ if (typeof module !== 'undefined') module.exports = VBVVideoStatus;
 
     return {
       kind: 'drive', ready: ready,
-      saveVerse: saveVerse,
+      saveVerse: function (id, wav, meta) { return waitFor(saveVerse(id, wav, meta)); },
       saveStitchRequest: saveStitchRequest,
       savePassage: function (file, wav) { return waitFor(savePassage(file, wav)); },
       saveStitchRequestConfirmed: function (spec) { return waitFor(saveStitchRequest(spec)); },
