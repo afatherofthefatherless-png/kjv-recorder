@@ -36,11 +36,11 @@ const FUNC = new Set([ // align_unit.py:44-51
 
 const WORD_RE = /[A-Za-z0-9]/; // align_unit.py:53
 
-const HALLUC = new Set([ // align_unit.py:194-199, plus common closers
+const HALLUC = new Set([ // trailing closers / fillers only; never "you" or "for"
   "thank", "thanks", "watching", "bye", "goodbye", "sorry", "really", "agree",
-  "subscribe", "please", "like", "comment", "sample", "simple", "teaching",
-  "owner", "owls", "amen", "okay", "ok", "alright", "right", "yeah", "yep",
-  "uh", "um", "you", "for", "watching", "bye", "peace",
+  "subscribe", "please", "comment", "sample", "simple", "teaching",
+  "owner", "owls", "amen", "okay", "ok", "alright", "yeah", "yep",
+  "uh", "um", "peace",
 ]);
 
 // Trailing closer phrases dropped only when they sit after the heard verse, in silence.
@@ -115,10 +115,10 @@ function rstripS(s) { // Python str.rstrip("s")
 
 // Near-miss pairs on top of VideoBot's ARCHAIC set.
 const NEAR = {
-  thee: new Set(["thee", "the", "you"]),
-  the: new Set(["the", "thee"]),
-  thou: new Set(["thou", "though", "you"]),
-  though: new Set(["though", "thou"]),
+  // Keep only systematic ASR slips measured on accurately-read KJV, not real
+  // word differences (thee/the, thou/though) a dyslexic reader may make.
+  thee: new Set(["thee", "you"]),
+  thou: new Set(["thou", "you"]),
   ye: new Set(["ye", "yeah", "you"]),
   yea: new Set(["yea", "yeah", "yes"]),
   yeah: new Set(["yeah", "ye", "yea"]),
@@ -126,6 +126,11 @@ const NEAR = {
   crime: new Set(["crime", "cry"]),
   doest: new Set(["doest", "dost", "does", "do"]),
   dost: new Set(["dost", "doest", "does", "do"]),
+  // Measured ASR typo-pairs (accurate Jonah readings of rowed/heard).
+  rowed: new Set(["rowed", "rode"]),
+  rode: new Set(["rode", "rowed"]),
+  heard: new Set(["heard", "herd"]),
+  herd: new Set(["herd", "heard"]),
 };
 
 function stemInfl(s) {
@@ -144,24 +149,23 @@ function isCapped(tok) {
 export function equiv(a, b) { // align_unit.py:83-96, plus near-miss
   if (!a || !b) return false;
   if (a === b) return true;
-  if (rstripS(a) === b || rstripS(b) === a) return true;
+  // rstripS is deliberately not used: "hand" vs "hands" is a real slip.
   const sa = ARCHAIC[a] || new Set([a]);
   const sb = ARCHAIC[b] || new Set([b]);
   let inter = false;
   for (const x of sa) { if (sb.has(x)) { inter = true; break; } }
   if (inter || sb.has(a) || sa.has(b)) return true;
-  if (Math.min(a.length, b.length) >= 5 && editDistance(a, b) <= 1) return true;
-  // Short ASR slips (rowed/rode, heard/herd). Keep well/will and son/sun strict.
-  if (editDistance(a, b) <= 1 && Math.min(a.length, b.length) >= 4 && commonPrefixLen(a, b) >= 2) return true;
   const na = NEAR[a], nb = NEAR[b];
   if ((na && na.has(b)) || (nb && nb.has(a))) return true;
+  // One-letter ASR typo on longer content words only. Function words stay
+  // strict so then/than, that/than and similar slips are flagged.
+  if (!FUNC.has(a) && !FUNC.has(b) && Math.min(a.length, b.length) >= 5 && editDistance(a, b) <= 1) return true;
   const sta = stemInfl(a), stb = stemInfl(b);
   if (sta !== a || stb !== b) {
     if (sta && stb && (sta === stb || (Math.min(sta.length, stb.length) >= 4 && editDistance(sta, stb) <= 1))) return true;
   }
-  // Longer-word near-miss (observe/deserve, Amittai/Amatai). Short distinct
-  // words (man/men, son/sun) stay strict.
-  if (Math.min(a.length, b.length) >= 6 && editDistance(a, b) <= 2) return true;
+  // Longer d<=2 (observe/deserve) is NOT accepted here. Proper-name slips
+  // such as Amittai/Amatai are handled in equivTokens via capitalisation.
   return false;
 }
 
@@ -182,6 +186,9 @@ function asrProb(item) {
   return (p == null || Number.isNaN(Number(p))) ? null : Number(p);
 }
 
+// Function words use a cheaper indel (0.35 vs 0.8) so a missed "the" or "and"
+// is aligned as its own missing/extra op instead of being absorbed into a
+// neighbouring content-word substitution. Weights are not a licence to drop flags.
 export function alignTokens(asr, kjv) { // align_unit.py:99-147
   const n = kjv.length, m = asr.length;
   const INF = 1e9;
@@ -235,24 +242,26 @@ function isCompoundPair(a, b, joined) {
   return !!(a && b && joined && (plain(a) + plain(b) === plain(joined) || plain(joined) === plain(a) + plain(b)));
 }
 
-export function cleanFlags(flags) { // align_unit.py:207-246
+export function isSwapKind(t) { return t === "sub" || t === "swap"; }
+
+function cleanFlags(flags) { // align_unit.py:207-246
   let out = flags.slice();
   const drop = new Set();
   for (let i = 0; i < out.length - 1; i++) {
     const a = out[i], b = out[i + 1];
-    if (a.type === "missing" && b.type === "sub" && isCompoundPair(a.kjv, b.kjv, b.asr)) drop.add(i), drop.add(i + 1);
-    if (a.type === "sub" && b.type === "missing" && isCompoundPair(a.kjv, b.kjv, a.asr)) drop.add(i), drop.add(i + 1);
+    if (a.type === "missing" && isSwapKind(b.type) && isCompoundPair(a.kjv, b.kjv, b.asr)) drop.add(i), drop.add(i + 1);
+    if (isSwapKind(a.type) && b.type === "missing" && isCompoundPair(a.kjv, b.kjv, a.asr)) drop.add(i), drop.add(i + 1);
     // split compounds: sackcloth → "sack" + "cloth", sixscore → "six" + "score"
-    if (a.type === "extra" && b.type === "sub" && isCompoundPair(a.asr, b.asr, b.kjv)) drop.add(i), drop.add(i + 1);
-    if (a.type === "sub" && b.type === "extra" && isCompoundPair(a.asr, b.asr, a.kjv)) drop.add(i), drop.add(i + 1);
+    if (a.type === "extra" && isSwapKind(b.type) && isCompoundPair(a.asr, b.asr, b.kjv)) drop.add(i), drop.add(i + 1);
+    if (isSwapKind(a.type) && b.type === "extra" && isCompoundPair(a.asr, b.asr, a.kjv)) drop.add(i), drop.add(i + 1);
   }
   out = out.filter((_, i) => !drop.has(i));
   const drop2 = new Set();
   const plainsKjv = [];
-  out.forEach((f, i) => { if (f.type === "missing" || f.type === "sub") plainsKjv.push([plain(f.kjv), i]); });
+  out.forEach((f, i) => { if (f.type === "missing" || isSwapKind(f.type)) plainsKjv.push([plain(f.kjv), i]); });
   out.forEach((f, i) => {
     const kn = plain(f.kjv), an = plain(f.asr);
-    if (f.type === "sub") {
+    if (isSwapKind(f.type)) {
       for (const [closedW, parts] of Object.entries(CLOSED)) {
         if (an === closedW && parts.has(kn)) {
           drop2.add(i);
@@ -263,7 +272,7 @@ export function cleanFlags(flags) { // align_unit.py:207-246
       }
     }
     if (f.type === "missing" && Object.prototype.hasOwnProperty.call(CLOSED, kn)) drop2.add(i);
-    if (f.type === "sub" && Object.prototype.hasOwnProperty.call(CLOSED, kn) && CLOSED[kn].has(an)) drop2.add(i);
+    if (isSwapKind(f.type) && Object.prototype.hasOwnProperty.call(CLOSED, kn) && CLOSED[kn].has(an)) drop2.add(i);
   });
   return out.filter((_, i) => !drop2.has(i));
 }
@@ -288,39 +297,30 @@ export function dropTrailingHallucinations(flags, asr, opts = {}) {
   let out = flags.slice();
   const speechEnd = opts.speechEnd;
   const slack = opts.slack != null ? opts.slack : 0.35;
-  // last matched/sub KJV word time, if we can see it on the aligned ASR side
   let lastMatchEnd = opts.lastMatchEnd;
   if (lastMatchEnd == null && asr && asr.length) {
     for (const w of asr) {
       if (w && w.end != null && !Number.isNaN(Number(w.end))) lastMatchEnd = Math.max(lastMatchEnd == null ? -Infinity : lastMatchEnd, Number(w.end));
     }
   }
-  // Existing VideoBot trailing pop for HALLUC / low-prob / FUNC
+  // Only drop known trailing-silence hallucinations (HALLUC / closer phrases).
+  // Never drop function words or a real verse-final "you" / "for" spoken during speech.
   while (out.length && out[out.length - 1].type === "extra") {
     const last = out[out.length - 1];
     const w = plain(last.asr);
-    const p = last.word_prob;
     const t = extraStart(last, asr);
     const inSilence = speechEnd != null && t != null && t >= speechEnd - slack;
-    const afterVerse = lastMatchEnd == null || t == null || t >= lastMatchEnd - 0.1;
-    if (HALLUC.has(w) || (p != null && p < 0.7) || FUNC.has(w)) {
-      if (t == null || inSilence || (afterVerse && HALLUC.has(w))) out.pop();
-      else break;
-    } else break;
+    if (inSilence && (HALLUC.has(w) || isCloserPhrase([last.asr]))) out.pop();
+    else break;
   }
   let runAt = out.length;
   while (runAt > 0 && out[runAt - 1].type === "extra") runAt--;
   if (runAt < out.length) {
     const run = out.slice(runAt);
     const starts = run.map((f) => extraStart(f, asr));
-    const afterVerse = starts.every((t) => t == null || lastMatchEnd == null || t >= lastMatchEnd - 0.1);
-    const inSilence = speechEnd == null || starts.every((t) => t == null || t >= speechEnd - slack);
-    const phrase = isCloserPhrase(run.map((f) => f.asr)) || run.some((f) => HALLUC.has(plain(f.asr)));
-    // Only drop the whole run if it is a closer (or contains one) and is beyond the verse;
-    // prefer silence, but a known closer phrase just after the last word still counts.
-    if (afterVerse && phrase && (inSilence || isCloserPhrase(run.map((f) => f.asr)))) {
-      out = out.slice(0, runAt);
-    }
+    const inSilence = speechEnd != null && starts.every((t) => t != null && t >= speechEnd - slack);
+    const phrase = isCloserPhrase(run.map((f) => f.asr));
+    if (inSilence && phrase) out = out.slice(0, runAt);
   }
   return out;
 }
@@ -344,16 +344,65 @@ function lastAsrTime(words) {
   return t;
 }
 
-export function flagOps(ops, kjv, asr, verseConf) { // align_unit.py:165-190
+function archaicEquiv(a, b) {
+  if (!a || !b || a === b) return false;
+  const sa = ARCHAIC[a] || new Set([a]);
+  const sb = ARCHAIC[b] || new Set([b]);
+  if (sb.has(a) || sa.has(b)) return true;
+  for (const x of sa) if (sb.has(x)) return true;
+  return false;
+}
+
+function sameWordForm(a, b) {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (archaicEquiv(a, b)) return false;
+  return false; // do not treat hand/hands as the same word
+}
+
+function sentenceInitial(kjv, i) {
+  if (i <= 0) return true;
+  return /[.!?;:]$/.test(String(kjv[i - 1] || ""));
+}
+
+function isNameToken(tok) {
+  if (!tok) return false;
+  const core = String(tok).replace(/\u2019/g, "'").replace(/\u2018/g, "'").replace(/^[^A-Za-z0-9']+|[^A-Za-z0-9']+$/g, "");
+  const letters = core.replace(/[^A-Za-z]/g, "");
+  if (!letters || !/[A-Z]/.test(letters)) return false;
+  const low = letters.toLowerCase();
+  if (FUNC.has(low)) return false;
+  if (/^(then|so|and|but|for|now|arise|wherefore|nevertheless|therefore|also)$/.test(low)) return false;
+  return true;
+}
+
+/** Capitalised name, or a word from the ARCHAIC / NEAR / RARE_VOCAB lists. */
+export function isUnusualKjv(tok, kjv, i) {
+  const kn = norm(tok);
+  if (!kn || kn.length <= 2 || FUNC.has(kn)) return false;
+  if (tok && /^[A-Z]/.test(String(tok).replace(/^[^A-Za-z]+/, "")) && !sentenceInitial(kjv || [], i == null ? 0 : i)) return true;
+  // NEAR typo-pairs (cry/crime, rowed/rode) are ordinary swaps, not archaic.
+  if (ARCHAIC[kn] || (typeof RARE_VOCAB !== "undefined" && RARE_VOCAB.has(kn))) return true;
+  return false;
+}
+
+export function flagOps(ops, kjv, asr, verseConf) { // align_unit.py flag_ops, plus swap/archaic kinds
   const flags = [];
-  for (const [kind, i, j] of ops) {
-    if (kind === "match") continue;
+  for (const [rawKind, i, j] of ops) {
     const kj = i != null ? kjv[i] : null;
     const aw = j != null ? asrWord(asr[j]) : null;
     const kn = kj ? norm(kj) : "", an = aw ? norm(aw) : "";
-    if (kind === "sub" && equivTokens(kj, aw)) continue;
-    if (verseConf >= 0.75 && ((FUNC.has(kn) && kind === "missing") || (FUNC.has(an) && kind === "extra")
-        || (FUNC.has(kn) && FUNC.has(an) && kind === "sub"))) continue;
+    let kind = rawKind;
+    if (kind === "match") {
+      if (sameWordForm(kn, an)) continue;
+      if (archaicEquiv(kn, an) || (kj != null && isUnusualKjv(kj, kjv, i) && kn !== an)) kind = "archaic";
+      else continue;
+    } else if (kind === "sub") {
+      if (sameWordForm(kn, an)) continue;
+      if (archaicEquiv(kn, an) || (kj != null && isUnusualKjv(kj, kjv, i) && kn !== an)) kind = "archaic";
+      else kind = "swap";
+    }
+    // missing / extra (including small words) stay as-is.
     let wp = null;
     if (j != null) wp = asrProb(asr[j]);
     let conf = "high";
@@ -362,9 +411,9 @@ export function flagOps(ops, kjv, asr, verseConf) { // align_unit.py:165-190
     const start = (j != null && asr[j] && asr[j].start != null) ? asr[j].start : null;
     const end = (j != null && asr[j] && asr[j].end != null) ? asr[j].end : null;
     flags.push({
-      type: kind, kjv: kj, asr: aw, confidence: conf,
+      type: kind, kind, kjv: kj, asr: aw, confidence: conf,
       word_prob: wp == null ? null : Math.round(wp * 1000) / 1000,
-      start, end,
+      start, end, _ki: i, _aj: j,
     });
   }
   return cleanFlags(flags);
@@ -437,16 +486,159 @@ export function checkTranscript(kjvText, asrWords, opts = {}) {
 }
 
 function displayWord(tok) {
-  if (!tok) return "";
-  return String(tok).replace(/\u2019/g, "'").replace(/\u2018/g, "'").replace(/^[^A-Za-z0-9']+|[^A-Za-z0-9']+$/g, "");
+  if (tok == null || tok === "") return "";
+  let s = String(tok).replace(/\u2019/g, "'").replace(/\u2018/g, "'");
+  s = s.replace(/^[^A-Za-z0-9']+|[^A-Za-z0-9']+$/g, "");
+  if (!s) return "";
+  return isNameToken(tok) ? s : s.toLowerCase();
+}
+
+export function kjvContext(kjv, i, window = 3) {
+  if (i == null || i < 0 || !kjv || i >= kjv.length) return null;
+  const lo = Math.max(0, i - window), hi = Math.min(kjv.length, i + window + 1);
+  const parts = [];
+  for (let k = lo; k < hi; k++) parts.push(k === i ? "[" + kjv[k] + "]" : kjv[k]);
+  return parts.join(" ");
+}
+
+export function extraContext(kjv, insertAt, heard, window = 3) {
+  const toks = (kjv || []).slice();
+  const at = insertAt == null ? toks.length : Math.max(0, Math.min(toks.length, insertAt));
+  const mark = "[" + (displayWord(heard) || "") + "]";
+  const lo = Math.max(0, at - window), hi = Math.min(toks.length, at + window);
+  const parts = toks.slice(lo, at).concat([mark], toks.slice(at, hi));
+  return parts.join(" ");
+}
+
+// Short sha1 (first 12 hex chars used for flag ids).
+function sha1hex(message) {
+  function rotl(n, s) { return (n << s) | (n >>> (32 - s)); }
+  const bytes = unescape(encodeURIComponent(String(message)));
+  const arr = [];
+  for (let i = 0; i < bytes.length; i++) arr.push(bytes.charCodeAt(i));
+  const ml = arr.length;
+  arr.push(0x80);
+  while ((arr.length % 64) !== 56) arr.push(0);
+  const bitLen = ml * 8;
+  for (let i = 7; i >= 0; i--) arr.push((bitLen >>> (i * 8)) & 0xff);
+  let h0 = 0x67452301, h1 = 0xEFCDAB89, h2 = 0x98BADCFE, h3 = 0x10325476, h4 = 0xC3D2E1F0;
+  const w = new Array(80);
+  for (let off = 0; off < arr.length; off += 64) {
+    for (let i = 0; i < 16; i++) {
+      const j = off + i * 4;
+      w[i] = ((arr[j] << 24) | (arr[j + 1] << 16) | (arr[j + 2] << 8) | arr[j + 3]) >>> 0;
+    }
+    for (let i = 16; i < 80; i++) w[i] = rotl(w[i - 3] ^ w[i - 8] ^ w[i - 14] ^ w[i - 16], 1) >>> 0;
+    let a = h0, b = h1, c = h2, d = h3, e = h4;
+    for (let i = 0; i < 80; i++) {
+      let f, k;
+      if (i < 20) { f = (b & c) | ((~b) & d); k = 0x5A827999; }
+      else if (i < 40) { f = b ^ c ^ d; k = 0x6ED9EBA1; }
+      else if (i < 60) { f = (b & c) | (b & d) | (c & d); k = 0x8F1BBCDC; }
+      else { f = b ^ c ^ d; k = 0xCA62C1D6; }
+      const temp = (rotl(a, 5) + f + e + k + w[i]) >>> 0;
+      e = d; d = c; c = rotl(b, 30) >>> 0; b = a; a = temp;
+    }
+    h0 = (h0 + a) >>> 0; h1 = (h1 + b) >>> 0; h2 = (h2 + c) >>> 0; h3 = (h3 + d) >>> 0; h4 = (h4 + e) >>> 0;
+  }
+  return [h0, h1, h2, h3, h4].map((h) => ("00000000" + h.toString(16)).slice(-8)).join("");
+}
+
+export function makeFlagId(ref, kind, ki, heard, wavSha) {
+  const raw = String(ref || "") + "|" + String(kind || "") + "|" + (ki == null ? "" : String(ki)) + "|" + (heard ? norm(heard) : "") + "|" + String(wavSha || "").slice(0, 16);
+  return sha1hex(raw).slice(0, 12);
+}
+
+function neighborTime(ops, asr, ki, which) {
+  // previous or next matched/sub ASR time around KJV index ki
+  let prev = null, next = null;
+  for (const [kind, i, j] of ops || []) {
+    if ((kind !== "match" && kind !== "sub" && kind !== "archaic" && kind !== "swap") || i == null || j == null || !asr[j]) continue;
+    const t0 = asr[j].start != null ? Number(asr[j].start) : null;
+    const t1 = asr[j].end != null ? Number(asr[j].end) : t0;
+    if (i < ki) prev = t1;
+    if (i > ki && next == null) next = t0;
+  }
+  return which === "prev" ? prev : next;
+}
+
+/** Map internal flags to VideoBot recorder fields. */
+export function toRecorderFlags(flags, checked, opts = {}) {
+  const kjv = (checked && checked.kjv) || [];
+  const asr = (checked && checked.asr) || [];
+  const ops = (checked && checked.ops) || [];
+  const wav = opts.wav || opts.file || "";
+  const ref = opts.ref || "";
+  const sha = opts.wavSha || opts.sha || "";
+  const out = [];
+  for (const f of flags || []) {
+    const kind = f.kind || (f.type === "sub" ? "swap" : f.type);
+    const ki = f._ki;
+    const aj = f._aj;
+    let timeS = (f.start != null && !Number.isNaN(Number(f.start))) ? Number(f.start) : null;
+    let timeE = (f.end != null && !Number.isNaN(Number(f.end))) ? Number(f.end) : null;
+    if (kind === "missing" && (timeS == null || timeE == null || timeS >= timeE)) {
+      const prev = neighborTime(ops, asr, ki, "prev");
+      const next = neighborTime(ops, asr, ki, "next");
+      if (prev != null) timeS = Math.max(0, prev);
+      else if (next != null) timeS = Math.max(0, next - 0.2);
+      if (timeE == null) timeE = timeS;
+    }
+    if (timeS != null) timeS = Math.max(0, Math.round(timeS * 1000) / 1000);
+    if (timeE != null) timeE = Math.max(timeS || 0, Math.round(timeE * 1000) / 1000);
+    let ctx = null;
+    if (kind === "extra") {
+      const insertAt = ki != null ? ki : (ops.find(([k, _i, j]) => j === aj) ? ki : null);
+      // insertion point: first following KJV index, or end
+      let at = kjv.length;
+      for (const [knd, i2, j2] of ops) {
+        if (j2 != null && aj != null && j2 > aj && i2 != null) { at = i2; break; }
+        if (knd !== "extra" && i2 != null) at = i2 + 1;
+      }
+      ctx = extraContext(kjv, at, f.asr || f.heard);
+    } else if (ki != null) {
+      ctx = kjvContext(kjv, ki);
+    }
+    const expected = kind === "extra" ? null : (displayWord(f.kjv) || null);
+    const heard = kind === "missing" ? null : (displayWord(f.asr) || null);
+    const rec = {
+      wav,
+      time_s: timeS,
+      expected,
+      heard,
+      kind,
+      confidence: f.confidence || null,
+      context: ctx,
+      id: f.id || makeFlagId(ref, kind, ki, kind === "missing" ? null : (f.asr || heard), sha),
+      type: kind,
+      kjv: f.kjv || null,
+      asr: f.asr || null,
+      word_prob: f.word_prob,
+      wav_start_s: timeS,
+      wav_end_s: timeE,
+    };
+    rec.message = failLine(rec);
+    out.push(rec);
+  }
+  return out;
+}
+
+export function failLine(f) {
+  const kind = (f && (f.kind || f.type)) || "";
+  if (kind === "missing") return 'Fail: missing word "' + (f.expected || displayWord(f.kjv) || "") + '"';
+  if (kind === "extra") return 'Fail: extra word "' + (f.heard || displayWord(f.asr) || "") + '"';
+  return "Fail: heard " + (f.heard || displayWord(f.asr) || "") + ". Did you mean " + (f.expected || displayWord(f.kjv) || "") + "?";
 }
 
 export function issueLines(flags, opts = {}) {
   const lines = [];
   for (const f of flags || []) {
-    if (f.type === "missing") lines.push("Missing word: " + displayWord(f.kjv));
-    else if (f.type === "extra") lines.push("Extra word: " + displayWord(f.asr));
-    else lines.push("Heard '" + displayWord(f.asr) + "' instead of '" + displayWord(f.kjv) + "'");
+    const rec = f.kind && f.message ? f : { ...f, kind: f.kind || (f.type === "sub" ? "swap" : f.type), expected: f.expected || displayWord(f.kjv), heard: f.heard || displayWord(f.asr) };
+    let line = rec.message || failLine(rec);
+    if (rec.context && (rec.kind === "missing" || rec.kind === "extra" || rec.kind === "archaic" || rec.kind === "swap")) {
+      line = line + "  " + rec.context;
+    }
+    lines.push(line);
   }
   if (opts && opts.unclearEnd) lines.push("Couldn't hear the end clearly.");
   return lines;
@@ -689,6 +881,11 @@ function lookupSpecial(tokenizer, piece, fallback) {
   return fallback;
 }
 
+// Rare KJV content words Whisper otherwise modernises or confuses (measured
+// on accurate Jonah takes: gourd→God/good, smote→smoked). Prompt them, but
+// do not mark them equivalent to the wrong word — a real slip must still flag.
+const RARE_VOCAB = new Set(["gourd", "smote"]);
+
 // Bias rare / archaic spellings and names without feeding the verse as a
 // script to recite. A fluent full-verse decoder prompt makes Whisper write
 // the prompt even when a word was actually missing or swapped.
@@ -699,7 +896,7 @@ export function vocabPrompt(kjvText) {
   for (const t of toks) {
     const n = norm(t);
     if (!n || seen.has(n) || FUNC.has(n)) continue;
-    if (ARCHAIC[n] || NEAR[n] || n.length >= 7 || (isCapped(t) && n.length >= 5)) {
+    if (ARCHAIC[n] || NEAR[n] || RARE_VOCAB.has(n) || n.length >= 7 || (isCapped(t) && n.length >= 5)) {
       out.push(t);
       seen.add(n);
     }
@@ -865,34 +1062,115 @@ function isTypoLike(a, b) {
 
 export function isStrongFlag(f) {
   const a = norm(f && f.kjv), b = norm(f && f.asr);
-  if (f.type === "missing") return !!(a && !FUNC.has(a));
-  if (f.type === "extra") return !!(b && !FUNC.has(b));
-  if (f.type === "sub") {
-    if (!a || !b) return true;
-    if (FUNC.has(a) && FUNC.has(b)) return false;
-    if (isTypoLike(a, b)) return false;
-    return true;
+  if (f.type === "missing") return !!a;
+  if (f.type === "extra") return !!b;
+  if (f.type === "sub" || f.type === "swap" || f.type === "archaic") return !!(a || b);
+  return false;
+}
+
+function promptedNameSet(kjvText) {
+  const names = new Set();
+  for (const tok of tokensOf(kjvText || "")) {
+    if (isCapped(tok) && norm(tok).length >= 5) names.add(norm(tok));
+  }
+  return names;
+}
+
+function pass1MatchedName(pass1, name) {
+  if (!name) return false;
+  for (const [kind, i] of (pass1 && pass1.ops) || []) {
+    if (kind === "match" && i != null && norm(pass1.kjv[i]) === name) return true;
   }
   return false;
 }
 
-// Verifier flags that should override a clean prompted pass. Subs are only
-// kept when they look like a real name swap or a badly fragmented long word,
-// not when unprompted ASR merely mishears (Nineveh→never, gourd→God).
-export function verifyShouldKeep(f) {
+/**
+ * Pass 2 sometimes garbles a proper name that Pass 1 already matched via the
+ * vocab prompt (Nineveh→never, Amittai→mid tie). Ignore only those.
+ * Every other missing / extra / swapped word from either pass is kept.
+ */
+export function isUnpromptedNameGarble(f, pass1, kjvText) {
+  const names = promptedNameSet(kjvText);
+  if (!names.size) return false;
   const a = norm(f && f.kjv), b = norm(f && f.asr);
-  if (f.type === "missing") return !!(a && !FUNC.has(a));
-  if (f.type === "extra") return !!(b && !FUNC.has(b) && !COMMON_ASR.has(b));
-  if (f.type !== "sub" || !a || !b || isTypoLike(a, b)) return false;
-  if (FUNC.has(a) && FUNC.has(b)) return false;
-  if (COMMON_ASR.has(b)) return false;
-  const d = editDistance(a, b);
-  // Long name reduced to a fragment (Amittai → "A").
-  if (a.length >= 6 && b.length <= a.length - 3) return true;
-  // Distinct proper names (Jonah → Nineveh / Jonimha).
-  if (isCapped(f.kjv) && isCapped(f.asr) && b.length >= 5 && d >= 3) return true;
-  // Short content word swapped for a clearly different word (son → Sir).
-  if (a.length <= 4 && !FUNC.has(a) && d >= 2) return true;
+  if (f.type === "missing" && names.has(a) && pass1MatchedName(pass1, a)) return true;
+  if (f.type === "extra") {
+    if (!b) return false;
+    if (COMMON_ASR.has(b) && [...names].some((n) => pass1MatchedName(pass1, n))) return true;
+    for (const n of names) {
+      if (pass1MatchedName(pass1, n) && (n.startsWith(b) || b.length <= 3 && n.includes(b))) return true;
+    }
+    return false;
+  }
+  if ((f.type === "sub" || f.type === "swap" || f.type === "archaic") && names.has(a) && pass1MatchedName(pass1, a)) {
+    if (!b) return true;
+    if (COMMON_ASR.has(b)) return true;
+    if (b.length <= Math.max(3, a.length - 3)) return true;
+    if (!isCapped(f.asr) && editDistance(a, b) >= 2) return true;
+    return false;
+  }
+  return false;
+}
+
+function asrWordOf(item) {
+  return typeof item === "string" ? item : (item && item.word) || "";
+}
+
+/** True when Pass 1 heard this KJV word exactly (not merely a near-miss). */
+export function pass1ExactMatch(pass1, kjvNorm) {
+  if (!kjvNorm || !pass1) return false;
+  for (const [kind, i, j] of pass1.ops || []) {
+    if (kind !== "match" || i == null || j == null) continue;
+    const kn = norm(pass1.kjv[i]);
+    const an = norm(asrWordOf(pass1.asr[j]));
+    if (kn === kjvNorm && an === kjvNorm) return true;
+  }
+  return false;
+}
+
+/**
+ * Drop a Pass 2 substitution of a word Pass 1 already heard exactly, when
+ * Pass 2 only offers a phonetic/archaic garble (compassed→encompassed,
+ * spake→speak). Still keep a clear proper-name swap (Jonah vs Nineveh),
+ * which is the case the second listen is meant to catch, and always keep
+ * Pass 2 missing/extra flags (a prompted first listen can fill in a skipped
+ * "that" or miss a repeated word).
+ */
+export function isPass2GarbleOfMatchedWord(f, pass1, kjvText) {
+  if (isUnpromptedNameGarble(f, pass1, kjvText)) return true;
+  if (!f || (f.type !== "sub" && f.type !== "swap" && f.type !== "archaic")) return false;
+  const a = norm(f.kjv), b = norm(f.asr);
+  if (!a || !b || !pass1ExactMatch(pass1, a)) return false;
+  if (isCapped(f.kjv) && isCapped(f.asr) && Math.min(a.length, b.length) >= 5 && editDistance(a, b) >= 3) return false;
+  if (a.includes(b) || b.includes(a)) return true;
+  if (isTypoLike(a, b) || editDistance(a, b) <= 2) return true;
+  const sta = stemInfl(a), stb = stemInfl(b);
+  if (sta && stb && sta === stb) return true;
+  return false;
+}
+
+export function mergePassFlags(pass1, pass2, kjvText) {
+  const first = (pass1 && pass1.flags) || [];
+  const second = (pass2 && pass2.flags) || [];
+  const keyOf = (f) => (f.type || "") + "|" + norm(f.kjv) + "|" + norm(f.asr);
+  const out = first.slice();
+  const seen = new Set(out.map(keyOf));
+  for (const f of second) {
+    const k = keyOf(f);
+    if (seen.has(k)) continue;
+    if (isPass2GarbleOfMatchedWord(f, pass1, kjvText)) continue;
+    out.push(f);
+    seen.add(k);
+  }
+  return out;
+}
+
+// Keep a conservative filter for callers that still use it: never drop FUNC words.
+export function verifyShouldKeep(f) {
+  if (!f) return false;
+  if (f.type === "missing") return !!norm(f.kjv);
+  if (f.type === "extra") return !!norm(f.asr);
+  if (f.type === "sub" || f.type === "swap" || f.type === "archaic") return !!(norm(f.kjv) || norm(f.asr));
   return false;
 }
 
@@ -984,35 +1262,35 @@ export async function checkAudio(wav, text, callOpts = {}) {
   let verified = false;
   let verifyFlags = [];
   let secondPass = false;
-  // Robin: one listen by default; a second listen only when the first is in doubt.
-  let doubtReasons = [];
-  if (callOpts.verify === true) doubtReasons = ["forced"];
-  else if (callOpts.verify !== false) doubtReasons = firstPassDoubt(checked, words, speech, kjvText);
-  if (doubtReasons.length) {
+  let doubtReasons = firstPassDoubt(checked, words, speech, kjvText);
+  // Always run both listens in the background unless the caller opts out.
+  if (callOpts.verify !== false) {
     secondPass = true;
     try { if (onStatus) onStatus("checking-again"); } catch {}
     const verifyPass = await transcribePcm(transcriber, audio, "King James Bible.", { ...callOpts, prompt: true });
     const vChecked = checkTranscript(kjvText, verifyPass.words, { speechEnd: speech.end, unclearEnd: false });
-    verifyFlags = (vChecked.flags || []).filter(verifyShouldKeep);
-    if (verifyFlags.length) {
-      verified = true;
-      words = verifyPass.words;
-      checked = { ...vChecked, flags: verifyFlags, unclearEnd: false };
-    } else {
-      // Second listen did not confirm a real missing/extra/swap. Drop typo-like
-      // first-pass slips (rowed/rode, gourd/God) so they do not stand as flags.
-      const kept = (checked.flags || []).filter((f) => {
-        const a = norm(f && f.kjv), b = norm(f && f.asr);
-        if (f.type === "sub" && a && b && (isTypoLike(a, b) || COMMON_ASR.has(b))) return false;
-        return true;
-      });
-      checked = { ...checked, flags: kept };
-    }
+    verifyFlags = vChecked.flags || [];
+    const merged = mergePassFlags(checked, vChecked, kjvText);
+    verified = verifyFlags.length > 0;
+    checked = {
+      ...checked,
+      flags: merged,
+      // Keep Pass 1 transcript (prompted names are usually cleaner). Pass 2
+      // only adds flags that Pass 1 smoothed over.
+      pass2: vChecked,
+      pass2Words: verifyPass.words,
+      pass2Transcript: (verifyPass.words || []).map((w) => w.word).join(" "),
+    };
   }
-  const issues = issueLines(checked.flags, { unclearEnd: checked.unclearEnd });
-  const note = formatNote(checked.flags, { unclearEnd: checked.unclearEnd });
+  const recFlags = toRecorderFlags(checked.flags, checked, {
+    wav: callOpts.wavName || callOpts.file || "",
+    ref: callOpts.ref || "",
+    wavSha: callOpts.wavSha || "",
+  });
+  const issues = issueLines(recFlags, { unclearEnd: checked.unclearEnd });
+  const note = formatNote(recFlags, { unclearEnd: checked.unclearEnd });
   return {
-    flags: checked.flags,
+    flags: recFlags,
     issues,
     coverage: checked.coverage,
     ops: checked.ops,
@@ -1053,7 +1331,9 @@ const api = {
   transcribeWav, checkTake, checkAudio, loadPipeline, resetPipeline, warmup, getRuntime,
   buildPromptDecoderIds, vocabPrompt, speechBounds, dropTrailingHallucinations,
   isEarlyCutoff, mergeTail, firstPassDoubt, hasNearMiss, hasLowConfidence,
+  isStrongFlag, verifyShouldKeep, mergePassFlags, isUnpromptedNameGarble, pass1ExactMatch, isPass2GarbleOfMatchedWord,
+  isUnusualKjv, kjvContext, extraContext, makeFlagId, toRecorderFlags, failLine,
   ARCHAIC, FUNC, HALLUC, CLOSED, NEAR, MODEL_ID, WHISPER_EN,
 };
 export default api;
-if (typeof window !== "undefined") window.VBVWordCheck = api;
+if (typeof globalThis !== "undefined") globalThis.VBVWordCheck = api;
