@@ -2647,7 +2647,7 @@ async function startRecording() {
   var gen = ++recGen, stream;
   recStarting = true;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, autoGainControl: true, noiseSuppression: true } });
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: false, autoGainControl: false, noiseSuppression: false } });
   } catch (e) { recStarting = false; if (gen === recGen) { var en = (e && e.name) || String(e); TT.lastError = 'getUserMedia: ' + en + (e && e.message ? ' ' + e.message : '');
     showErr(en === 'NotAllowedError' || en === 'SecurityError' ? 'Recording failed: the microphone is blocked for this site (' + en + '). On iPad: tap \u201caA\u201d in the Safari address bar, Website Settings, Microphone, Allow (or Settings \u203a Apps \u203a Safari \u203a Microphone). Then reload the page and tap Record again.'
       : en === 'NotFoundError' || en === 'OverconstrainedError' ? 'Recording failed: no microphone was found (' + en + '). Check that a microphone is connected and try again.'
@@ -2756,7 +2756,19 @@ async function sendPassage() {
     ab = null;
     var n = buf.length, nc = buf.numberOfChannels, mono = new Float32Array(n); // one channel, 16-bit, like the verse WAVs
     for (var c = 0; c < nc; c++) { var d = buf.getChannelData(c); for (var i = 0; i < n; i++) mono[i] += d[i] / nc; }
-    var wav = C.encodeWav([mono], buf.sampleRate); mono = null; buf = null;
+    var sr = buf.sampleRate;
+    if (sr !== 48000) {
+      var n48 = Math.max(1, Math.round(mono.length * 48000 / sr));
+      var oc = new OfflineAudioContext(1, n48, 48000);
+      var b48 = oc.createBuffer(1, mono.length, sr);
+      b48.getChannelData(0).set(mono);
+      var src = oc.createBufferSource(); src.buffer = b48; src.connect(oc.destination); src.start();
+      var rendered = await oc.startRendering();
+      mono = rendered.getChannelData(0).slice();
+      sr = 48000;
+    }
+    if (C.normalize) C.normalize([mono], sr); // same target as verse-by-verse: -16 LUFS, ceiling -1.5 dBFS
+    var wav = C.encodeWav([mono], sr); mono = null; buf = null;
     await VBV.savePassage(N.wav, wav);
     if (inputBlob === blob) { outBlob = blob; TT.sentBlob = blob; TT.sentFor = P.short; }
     sendSay('Saved to Drive. VideoBot will pick it up at its 21:00 check, or ask it now.');
