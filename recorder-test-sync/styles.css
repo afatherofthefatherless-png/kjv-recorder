@@ -1,0 +1,240 @@
+/* Shell typography, drawers, tracker chrome (from live) plus light-page rules. */
+
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; background: #000; scroll-padding-top: calc(var(--kjb-top, 96px) + 8px); }
+body { margin: 0; background: #000; color: #fff; font-family: 'OpenDyslexic', system-ui, sans-serif; font-size: 18px; line-height: 1.6; overflow-x: hidden; }
+[data-kjb-app][hidden] { display: none !important; }
+.kjb-drawer[hidden], .kjb-scrim[hidden], #kjbMig[hidden], #trkViewBar[hidden], #app-tracker nav.tabs[hidden], #ttHandoff[hidden], #rrMark[hidden], #ptChangeBox[hidden],
+#kjbMigPreview[hidden], #shell-guard[hidden], #shell-other[hidden], #ttHandoff button[hidden] { display: none !important; }
+#app-tracker { overflow-x: visible; } /* the tracker's body rule (overflow-x hidden) would make the app root a scroll box and stop sticky panels */
+#app-reader { font-family: 'OpenDyslexic', system-ui, sans-serif; }
+.kjb-loading { max-width: 1100px; margin: 24px auto; padding: 0 14px; color: #bbb; }
+
+/* top bar: three tabs */
+#shell-top { position: sticky; top: 0; z-index: 40; background: #000; border-bottom: 2px solid #fff; padding: calc(8px + env(safe-area-inset-top, 0px)) 14px 10px; }
+.kjb-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; max-width: 1100px; margin: 0 auto; }
+.kjb-tabs button { font: inherit; font-family: 'OpenDyslexic', system-ui, sans-serif; min-height: 64px; font-size: 21px; font-weight: 700; line-height: 1.2; background: #000; color: #fff; border: 2px solid #fff; border-radius: 14px; padding: 6px 8px; cursor: pointer; touch-action: manipulation; }
+.kjb-tabs button[aria-selected="true"] { background: #fff; color: #000; }
+.kjb-tabs button[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
+.kjb-tabs button:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+@media (max-width: 600px) { .kjb-tabs button { font-size: 17px; padding: 4px; } #shell-top { padding-left: 10px; padding-right: 10px; } .kjb-tabs { gap: 6px; } }
+#shell-guard, #shell-other { max-width: 1100px; margin: 8px auto 0; border: 2px solid #facc15; border-radius: 10px; padding: 8px 12px; font-size: 17px; font-weight: 700; }
+
+/* title row with the one Settings & info button */
+.kjb-titlerow { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 18px 0 12px; }
+.kjb-titlerow h1 { font-size: 26px; margin: 0; line-height: 1.3; }
+.kjb-titlerow h1:focus { outline: none; }
+.kjb-setbtn, .kjb-second, .kjb-primary { font: inherit; font-family: 'OpenDyslexic', system-ui, sans-serif; display: inline-flex; align-items: center; justify-content: center; gap: 10px; text-align: center; border-radius: 12px; cursor: pointer; touch-action: manipulation; line-height: 1.25; max-width: 100%; white-space: normal; }
+.kjb-setbtn { flex: none; min-height: 56px; font-size: 18px; font-weight: 700; padding: 8px 16px; background: #000; color: #fff; border: 2px solid #fff; }
+.kjb-gear { font-size: 24px; line-height: 1; }
+.kjb-second { min-height: 56px; font-size: 19px; font-weight: 400; padding: 10px 20px; background: #000; color: #fff; border: 2px solid #fff; }
+.kjb-primary { min-height: 68px; font-size: 21px; font-weight: 700; padding: 12px 26px; background: #fff; color: #000; border: 2px solid #fff; }
+.kjb-setbtn:focus-visible, .kjb-second:focus-visible, .kjb-primary:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+.kjb-second:disabled, .kjb-primary:disabled { opacity: .45; cursor: not-allowed; }
+.kjb-stack { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.kjb-stack > button { width: 100%; }
+.kjb-muted { color: #bbb; font-size: 16px; }
+.kjb-line { min-height: 1.6em; margin-top: 8px; }
+.kjb-line.bad, .kjb-warnline { border: 2px solid #facc15; border-radius: 10px; padding: 8px 12px; }
+.kjb-panel { background: #111; border: 2px solid #555; border-radius: 14px; padding: 16px; }
+.kjb-wrap { max-width: 1100px; margin: 0 auto; padding: 0 14px 140px; }
+
+/* ---------- Tracker ---------- */
+#app-tracker main.wrap.kjb-trk { max-width: 1100px; padding-top: 0; }
+#app-tracker[data-view="map"] main.wrap.kjb-trk, #app-tracker[data-view="plan"] main.wrap.kjb-trk { max-width: 780px; } /* same width as before, so the map draws the same */
+.kjb-tgrid { display: grid; gap: 16px; }
+.kjb-tmain { min-width: 0; }
+@media (min-width: 900px) {
+  #app-tracker:not([data-view="map"]):not([data-view="plan"]) .kjb-tgrid { grid-template-columns: 300px 1fr; align-items: start; }
+  #app-tracker:not([data-view="map"]):not([data-view="plan"]) .kjb-progress { position: sticky; top: calc(var(--kjb-top, 96px) + 12px); }
+}
+#app-tracker .kjb-progress .pace { border: 0; border-top: 2px solid #555; border-radius: 0; padding: 12px 0 0; margin: 12px 0 0; }
+#app-tracker .kjb-pacebox { border: 0; padding: 0; margin: 0; }
+#app-tracker #list .card.cur .btnlink { background: #fff; color: #000; border-color: #fff; min-height: 56px; font-size: 1em; font-weight: 700; padding: 8px 22px; }
+#app-tracker .kjb-viewbar { margin: 0 0 12px; }
+.kjb-mig { border: 2px solid #fff; border-radius: 14px; padding: 16px; margin: 0 0 16px; background: #111; }
+.kjb-mig h2 { margin-top: 0; font-size: 22px; }
+.kjb-mig h2:focus { outline: none; }
+.kjb-mig h3 { font-size: 19px; margin: 0 0 6px; }
+.kjb-migbox { border-top: 2px solid #555; padding-top: 12px; margin-top: 12px; }
+.kjb-mig input[type=text], .kjb-mig textarea { width: 100%; }
+.kjb-counts { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 17px; }
+.kjb-counts th, .kjb-counts td { border: 2px solid #555; padding: 6px 10px; text-align: left; }
+.kjb-counts thead th { font-size: 15px; color: #bbb; }
+
+/* ---------- Settings & info drawer (one per tab, same place) ---------- */
+.kjb-scrim { position: fixed; inset: 0; background: rgba(0, 0, 0, .72); z-index: 59; }
+.kjb-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(500px, 100%); background: #111; border-left: 2px solid #fff; z-index: 60;
+  transform: translateX(100%); transition: transform .2s; display: flex; flex-direction: column; font-size: 17px; line-height: 1.6; color: #fff; }
+.kjb-drawer.open { transform: none; }
+@media (prefers-reduced-motion: reduce) { .kjb-drawer { transition: none; } }
+html.kjb-drawer-open, html.kjb-drawer-open body { overflow: hidden; }
+.kjb-dhead { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: calc(14px + env(safe-area-inset-top, 0px)) 16px 14px; border-bottom: 2px solid #fff; }
+.kjb-dhead h2 { font-size: 22px; margin: 0; }
+.kjb-dbody { overflow-y: auto; padding: 12px 16px 60px; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; flex: 1 1 auto; }
+.kjb-dintro { font-size: 16px; color: #bbb; margin: 4px 0 12px; }
+details.kjb-sec { border: 2px solid #555; border-radius: 12px; margin: 0 0 10px; background: #000; }
+details.kjb-sec > summary { list-style: none; min-height: 60px; display: flex; align-items: center; gap: 12px; padding: 8px 14px; font-weight: 700; font-size: 19px; cursor: pointer; }
+details.kjb-sec > summary::-webkit-details-marker { display: none; }
+details.kjb-sec > summary::before { content: "+"; display: inline-flex; width: 30px; height: 30px; border: 2px solid #fff; border-radius: 8px; align-items: center; justify-content: center; flex: none; font-size: 20px; }
+details.kjb-sec[open] > summary::before { content: "\2212"; }
+details.kjb-sec > summary .t { display: flex; flex-direction: column; line-height: 1.3; }
+details.kjb-sec > summary .hint { font-weight: 400; font-size: 15px; color: #bbb; }
+details.kjb-sec > .in { padding: 0 14px 14px; }
+.kjb-ddivider { font-size: 15px; color: #bbb; margin: 18px 0 8px; }
+.kjb-build { margin-top: 16px; font-size: 15px; }
+.kjb-drawer .grid.kjb-grid1 { grid-template-columns: 1fr; }
+
+
+
+/* Light recorder page — OpenDyslexic, dark high contrast, small check buttons. */
+@font-face {
+  font-family: "OpenDyslexic";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/opendyslexic-latin-400-normal.woff2") format("woff2");
+}
+
+html, body {
+  margin: 0;
+  background: #000;
+  color: #fff;
+  font-family: "OpenDyslexic", system-ui, sans-serif;
+  font-size: 18px;
+  line-height: 1.5;
+}
+
+#shell-top {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: #000;
+  border-bottom: 2px solid #fff;
+  padding: calc(8px + env(safe-area-inset-top, 0px)) 14px 10px;
+}
+#shell-top .vbv-head { max-width: 1100px; margin: 0 auto; }
+.nav-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  max-width: 1100px;
+  margin: 8px auto 0;
+}
+.nav-row button[role="tab"] {
+  font: inherit;
+  font-family: "OpenDyslexic", system-ui, sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  min-height: 36px;
+  padding: 4px 12px;
+  background: #000;
+  color: #fff;
+  border: 2px solid #fff;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.nav-row button[role="tab"][aria-selected="true"] {
+  background: #fff;
+  color: #000;
+}
+#checkCount {
+  display: inline-block;
+  min-width: 1.2em;
+  margin-left: 4px;
+  font-variant-numeric: tabular-nums;
+}
+#settingsBtn { margin-left: auto; }
+
+#view-tracker, #view-recorder, #view-checks { max-width: 1100px; margin: 0 auto; padding: 0 14px 80px; }
+#view-tracker { overflow-x: visible; }
+
+/* Recorder */
+.rec-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; margin: 16px 0 8px; }
+.rec-top .linkish { flex: 1 1 100%; text-align: left; }
+.rec-top h1 { font-size: 22px; margin: 0; }
+.rec-meta { color: #bbb; font-size: 16px; }
+.verse-box {
+  border: 2px solid #fff;
+  border-radius: 12px;
+  padding: 16px;
+  font-size: var(--verse-fs, 30px);
+  line-height: 1.45;
+  background: #000;
+  min-height: 6em;
+}
+.verse-num { font-weight: 700; margin-right: 0.2em; }
+.rec-status { min-height: 1.5em; margin: 10px 0; font-size: 16px; }
+.rec-status.is-err { color: #ff8a80; }
+.rec-status.is-ok { color: #86efac; }
+.rec-status.is-warn { color: #facc15; }
+.rec-status.is-rec { color: #fff; font-weight: 700; }
+
+.rec-bar {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 12px;
+  min-height: 44px; /* reserved so the page does not jump */
+}
+#recBtn, #reRecBtn, #prevVerse, #nextVerse {
+  font: inherit;
+  font-family: "OpenDyslexic", system-ui, sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  min-height: 44px;
+  min-width: 96px;
+  padding: 6px 16px;
+  border: 2px solid #fff;
+  border-radius: 10px;
+  background: #fff;
+  color: #000;
+  cursor: pointer;
+}
+#recBtn.is-stop { background: #c62828; color: #fff; border-color: #fff; }
+#reRecBtn, #prevVerse, #nextVerse { background: #000; color: #fff; }
+#prevVerse:disabled, #nextVerse:disabled { opacity: .45; cursor: not-allowed; }
+#recBtn:focus-visible, #reRecBtn:focus-visible, #prevVerse:focus-visible, #nextVerse:focus-visible, .chk-btn:focus-visible, .nav-row button:focus-visible {
+  outline: 3px solid #fff;
+  outline-offset: 2px;
+}
+
+/* Check page: small, simple buttons (Apple Pencil). Reserved row height, no layout shift. */
+.chk-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px 12px;
+  align-items: center;
+  border: 2px solid #555;
+  border-radius: 10px;
+  padding: 8px 10px;
+  margin: 8px 0;
+  min-height: 52px;
+  box-sizing: border-box;
+}
+.chk-head { min-width: 0; }
+.chk-head strong { display: block; font-size: 16px; }
+.chk-note { display: block; color: #facc15; font-size: 14px; line-height: 1.3; }
+.chk-acts { display: flex; flex-direction: row; gap: 6px; flex: 0 0 auto; }
+.chk-btn {
+  font: inherit;
+  font-family: "OpenDyslexic", system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.2;
+  min-height: 24px;
+  padding: 2px 8px;
+  border: 1px solid #fff;
+  border-radius: 4px;
+  background: #000;
+  color: #fff;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.chk-btn:active { background: #333; }
+
+.linkish { font-size: 16px; background: none; border: 0; color: #fff; text-decoration: underline; cursor: pointer; padding: 0; font-family: inherit; }
+
+[hidden] { display: none !important; }

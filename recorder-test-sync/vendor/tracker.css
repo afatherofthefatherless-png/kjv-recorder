@@ -1,0 +1,426 @@
+/* Extracted tracker styles from live index.html (tokens, chrome, home, drive mark). */
+
+/* ---- tokens.css ---- */
+/* Recorder redesign v1 — design tokens
+ * Extracted from /workspace/recorder-redesign/v1/mock/make_v1.py
+ * Do not invent values. Mock canvas is 2048 × 1536.
+ *
+ * Scale factor
+ *   The mock is 2048 CSS-design-px wide (the PNG width).
+ *   A real iPad landscape viewport is 1024–1366 CSS px.
+ *   --scale is unitless: 0.5 at 1024 CSS px, stepping up to 1366/2048 at 1366
+ *   (media queries at the end). --mock-px is the fluid length form.
+ *   A mock pixel size S becomes calc(S * var(--scale) * 1px):
+ *     28px mock → 14px at 1024, 18.67px at 1366 — but text is floored at 16px
+ *     120px button → 60px at 1024, 80px at 1366
+ *   rem values assume a 16px root: calc(S * var(--scale) / 16 * 1rem).
+ *
+ * OpenDyslexic is licensed under the SIL Open Font License 1.1
+ * (Reserved Font Name OpenDyslexic). Copyright (c) 2019-07-29,
+ * Abbie Gonzalez, and 12/2012–2019. Full text: ../mock/fonts/OFL.txt
+ *
+ * --color-annotate is used only on annotated/contact-sheet copies
+ * for Chief of Staff. It is not a product colour.
+ */
+
+
+
+
+
+/* No italic file is shipped. Verse text and UI copy use Regular (400)
+ * or Bold (700) only. letter-spacing is not set in the generator (0). */
+
+:root {
+  /* ---- canvas and scale ---- */
+  --canvas-width: 2048;
+  --canvas-height: 1536;
+  --scale-at-1024: 0.5;
+  --scale-at-1366: calc(1366 / 2048);
+  /* --scale must be a plain number (it is multiplied by 1px everywhere).
+   * The old clamp(0.5, 100vw/2048, ...) mixed a number with a length and
+   * was invalid CSS (fixed 15 Nov 2026). --scale now steps by viewport
+   * width (see the @media rules after :root); --mock-px is the fluid
+   * length version (one mock pixel) for anyone who wants smooth scaling. */
+  --scale: 0.5;
+  --mock-px: clamp(0.5px, calc(100vw / 2048), calc(1366px / 2048));
+  /* Text floor (Designer, 15 Nov 2026, for Robin's eyesight): no readable text below 16 CSS px. */
+  --text-floor: 16px;
+
+  /* ---- colours (exact from make_v1.py) ---- */
+  --color-bg: #000000;
+  --color-fg: #ffffff;
+  --color-muted: #bbbbbb;
+  --color-line: #555555;
+  --color-panel: #111111;
+  --color-green: #22c55e;
+  --color-red: #d00000;
+  --color-annotate: #ffd24d; /* annotated notes and contact sheet only */
+
+  /* ---- borders ---- */
+  --border-width: 2px;           /* default outlines (rects, buttons, tabs, dots, bars) */
+  --border-width-emphasis: 3px;  /* current book, current chapter/verse row, current checklist row, current-verse ring, focus */
+  --focus-outline: 3px solid var(--color-fg);
+
+  /* ---- radii (mock px, also as scaled CSS) ---- */
+  --radius-panel-mock: 16;
+  --radius-verse-panel-mock: 18;   /* record/review verse panel */
+  --radius-button-mock: 18;
+  --radius-tab-mock: 18;
+  --radius-key-mock: 16;
+  --radius-current-row-mock: 12;  /* open chapter row, NEXT list row, current/held checklist row */
+  --radius-current-book-mock: 10;
+  --radius-status-mock: 14;       /* recording banner, save-state card */
+  --radius-progress-mock: 8;      /* header progress track, level meter */
+  --radius-progress-fill-mock: 6;
+  --radius-stitch-progress-mock: 12;
+  --radius-stitch-fill-mock: 10;
+  --radius-save-bar-mock: 6;
+  --radius-save-bar-fill-mock: 4;
+  /* Dots are circles, not rounded squares. */
+
+  --radius-panel: calc(var(--radius-panel-mock) * var(--scale) * 1px);
+  --radius-verse-panel: calc(var(--radius-verse-panel-mock) * var(--scale) * 1px);
+  --radius-button: calc(var(--radius-button-mock) * var(--scale) * 1px);
+  --radius-tab: calc(var(--radius-tab-mock) * var(--scale) * 1px);
+  --radius-key: calc(var(--radius-key-mock) * var(--scale) * 1px);
+  --radius-current-row: calc(var(--radius-current-row-mock) * var(--scale) * 1px);
+  --radius-current-book: calc(var(--radius-current-book-mock) * var(--scale) * 1px);
+  --radius-status: calc(var(--radius-status-mock) * var(--scale) * 1px);
+  --radius-progress: calc(var(--radius-progress-mock) * var(--scale) * 1px);
+
+  /* ---- spacing (mock px and scaled) ---- */
+  --space-margin-mock: 48;  /* page margin */
+  --space-safe-mock: 24;    /* no ink in this edge band */
+  --space-tab-gap-mock: 12;
+  --space-tab-height-mock: 100;
+  --space-chrome-title-top-mock: 62;
+  --space-chrome-bar-top-mock: 128;
+  --space-chrome-bar-height-mock: 16;
+  --space-chrome-tabs-top-mock: 156;
+  --space-after-tabs-mock: 14;     /* then a 2px rule, then 18px */
+  --space-after-rule-mock: 18;
+  --space-panel-pad-mock: 28;      /* verse panel inner pad; stitch panel 28 */
+  --space-col-gap-mock: 28;        /* two-column panels on 02, 06b, 07 */
+  --space-gate-col-gap-mock: 32;
+  --space-button-row-gap-mock: 18; /* Play / Save / Record again */
+  --space-button-pair-gap-mock: 20; /* Stitch now pair */
+  --space-checklist-row-mock: 64;
+  --space-checklist-gap-mock: 10;
+
+  --space-margin: calc(var(--space-margin-mock) * var(--scale) * 1px);
+  --space-safe: calc(var(--space-safe-mock) * var(--scale) * 1px);
+  --space-tab-gap: calc(var(--space-tab-gap-mock) * var(--scale) * 1px);
+  --space-tab-height: calc(var(--space-tab-height-mock) * var(--scale) * 1px);
+  --space-panel-pad: calc(var(--space-panel-pad-mock) * var(--scale) * 1px);
+  --space-col-gap: calc(var(--space-col-gap-mock) * var(--scale) * 1px);
+
+  /* ---- type family ---- */
+  --font-ui: "OpenDyslexic", sans-serif;
+  --font-weight-regular: 400;
+  --font-weight-bold: 700;
+  --letter-spacing: 0;
+
+  /* Type sizes at 2048-wide (mock px), as used in make_v1.py.
+   * Product text on the approved screens uses 28, 32, 36, 40, 42, 44, 48, 56,
+   * and verse text 80–90 (algorithm below). 28 is the smallest product size.
+   * (font(20) and font(22) exist only in an unused video_marker helper.) */
+  --fs-28-mock: 28;
+  --fs-32-mock: 32;
+  --fs-36-mock: 36;
+  --fs-40-mock: 40;
+  --fs-42-mock: 42;
+  --fs-44-mock: 44;
+  --fs-48-mock: 48;
+  --fs-56-mock: 56;
+  --fs-verse-min-mock: 80;
+  --fs-verse-max-mock: 90;
+
+  /* Scaled CSS px and rem (root 16px) */
+  --fs-28: calc(28 * var(--scale) * 1px);
+  --fs-32: calc(32 * var(--scale) * 1px);
+  --fs-36: calc(36 * var(--scale) * 1px);
+  --fs-40: calc(40 * var(--scale) * 1px);
+  --fs-42: calc(42 * var(--scale) * 1px);
+  --fs-44: calc(44 * var(--scale) * 1px);
+  --fs-48: calc(48 * var(--scale) * 1px);
+  --fs-56: calc(56 * var(--scale) * 1px);
+  --fs-verse-min: calc(80 * var(--scale) * 1px);
+  --fs-verse-max: calc(90 * var(--scale) * 1px);
+
+  --fs-28-rem: calc(28 * var(--scale) / 16 * 1rem);
+  --fs-32-rem: calc(32 * var(--scale) / 16 * 1rem);
+  --fs-36-rem: calc(36 * var(--scale) / 16 * 1rem);
+  --fs-40-rem: calc(40 * var(--scale) / 16 * 1rem);
+  --fs-42-rem: calc(42 * var(--scale) / 16 * 1rem);
+  --fs-44-rem: calc(44 * var(--scale) / 16 * 1rem);
+  --fs-48-rem: calc(48 * var(--scale) / 16 * 1rem);
+  --fs-56-rem: calc(56 * var(--scale) / 16 * 1rem);
+  --fs-verse-min-rem: calc(80 * var(--scale) / 16 * 1rem);
+  --fs-verse-max-rem: calc(90 * var(--scale) / 16 * 1rem);
+
+  /* Line-height (as used, not a CSS unitless font line-height).
+   * The generator places runs by ink box. Default textblock gap is
+   * int(ink_height('Ag') * 0.45) + 8, then the next line starts at
+   * previous ink-bottom + gap. Measured OpenDyslexic Regular 'Ag' ink
+   * and that default stride at 2048-wide:
+   *   28: ink 31, gap 21, stride 52  (stride/size 1.86)
+   *   32: ink 35, gap 23, stride 58  (1.81)
+   *   40: ink 45, gap 28, stride 73  (1.83)
+   * Verse panel (draw_plain_verse): try sizes 90,88,86,84,82,80 and
+   * leading factors 0.55,0.50,0.45,0.40,0.35; gap = int(ink * factor) + 6.
+   * First pair that fits the panel wins. On the approved canvas,
+   * Genesis 6:19 fitted at 86px / factor 0.35 (stride 135) on screens 03
+   * and 03b, and 84px / factor 0.40 (stride 136) on screen 04. */
+  --leading-textblock-factor: 0.45;
+  --leading-textblock-extra-mock: 8;
+  --leading-verse-extra-mock: 6;
+
+  /* ---- buttons and hit targets ---- */
+  /* Action buttons in the mock are 120px tall (128px used as a floor on
+   * Record/Stop if the remaining slot is short, and for the sign-in
+   * buttons). At --scale 0.5 that is 60 CSS px; at 1366 it is 80 CSS px.
+   * Both are above the 44 CSS px minimum. */
+  --btn-height-mock: 120;
+  --btn-height-floor-mock: 128;
+  --btn-height: calc(120 * var(--scale) * 1px);
+  --btn-height-floor: calc(128 * var(--scale) * 1px);
+  --hit-min: 44px;
+
+  /* Visible chrome that is shorter than 120 mock px (hit area must
+   * still be at least 44 CSS px, using padding if needed):
+   *   tabs            100 mock → 50 CSS px at 1024 (ok)
+   *   Previous/Next    72 mock → 36 CSS px at 1024 (pad the hit target)
+   *   All books nav    56 mock → 28 CSS px at 1024 (pad the hit target)
+   *   Make video again is a text link; give it a 44 CSS px hit area. */
+  --btn-nav-height-mock: 72;
+  --btn-back-height-mock: 56;
+  --tab-height-mock: 100;
+
+  /* ---- dots ---- */
+  --dot-key-r-mock: 18;          /* large key on screen 01 */
+  --dot-overview-key-r-mock: 12; /* compact key on screen 01a */
+  --dot-map-r-max-mock: 14;      /* screen 01 rows: min(14, pitch * 0.36) */
+  --dot-open-chapter-r-mock: 16; /* Genesis 6 panel, stitch progress */
+  --dot-list-r-mock: 11;         /* lined-up list */
+  --dot-current-ring-extra-mock: 6; /* white ring radius is r+6, width 3 */
+  --dot-stroke-mock: 2;
+  --dot-green: var(--color-green);
+  --dot-outline: var(--color-muted);
+  --dot-current-ring: var(--color-fg);
+  --dot-mark: var(--color-fg); /* white bar, triangle, check */
+
+  /* ---- recording ---- */
+  --rec-dot-r-mock: 16;          /* banner dot */
+  --rec-btn-dot-r-mock: 14;      /* Record / Stop icon */
+  --rec-banner-height-mock: 80;
+  --rec-pulse-duration: 1.6s;
+
+  /* ---- motion ---- */
+  --motion-fade: 350ms;          /* use 300–400ms; 350ms is the mid value */
+  --motion-fade-min: 300ms;
+  --motion-fade-max: 400ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-fade: 0.01ms;
+    --motion-fade-min: 0.01ms;
+    --motion-fade-max: 0.01ms;
+    --rec-pulse-duration: 0.01ms;
+  }
+}
+
+html {
+  font-family: var(--font-ui);
+  background: var(--color-bg);
+  color: var(--color-fg);
+  letter-spacing: var(--letter-spacing);
+}
+
+/* Helper: mock-px → CSS px at the current viewport scale.
+ * Usage: font-size: var(--fs-28); or width: calc(260 * var(--scale) * 1px); */
+
+
+/* --scale steps (unitless). Values at the breakpoints match the mock scale. */
+@media (min-width: 1112px) { :root { --scale: calc(1112 / 2048); } }
+@media (min-width: 1194px) { :root { --scale: calc(1194 / 2048); } }
+@media (min-width: 1280px) { :root { --scale: calc(1280 / 2048); } }
+@media (min-width: 1366px) { :root { --scale: calc(1366 / 2048); } }
+/* Text sizes: use max(var(--text-floor), calc(S * var(--scale) * 1px)). */
+
+/* ---- vbv-chrome.css ---- */
+/* M2.1: tokens.css is now Designer's fixed source (unitless --scale stepped by media query, --mock-px, --text-floor). vbv-shell-ext.js still sets
+   --scale exactly (innerWidth/2048, clamped 0.5..1366/2048) so sizes match the mock at every width. */
+/* ===== VBV M1 restyle layer: Designer's tokens (tokens.css) applied to the shared chrome only.
+   Portable: no app code depends on it; the tracker's reading-list red/green status buttons and the apps' own content are not touched. ===== */
+#shell-top { padding: calc(10px + env(safe-area-inset-top, 0px)) max(var(--space-margin), 14px) 0; border-bottom: var(--border-width) solid var(--color-fg); }
+.vbv-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin: 0; }
+.vbv-apptitle { margin: 0; font-weight: var(--font-weight-bold); font-size: max(var(--fs-44), 22px); line-height: 1.25; color: var(--color-fg); }
+.vbv-progtext { margin: 0; font-size: max(var(--fs-28), 16px); line-height: 1.4; color: var(--color-muted); text-align: right; font-variant-numeric: tabular-nums; }
+.vbv-progtext:empty { display: none; }
+/* m3.9: Drive signed-in marker — fixed width so the header does not jump; OpenDyslexic, 16px+, high contrast on black */
+.vbv-drive-mark { display: inline-flex; align-items: center; gap: 8px; box-sizing: border-box;
+  width: 34ch; min-width: 34ch; max-width: 34ch; margin: 0; padding: 6px 8px; min-height: 44px;
+  border: 1px solid var(--color-line); border-radius: var(--radius-button); background: var(--color-panel);
+  color: var(--color-fg); font-family: var(--font-ui); font-size: max(16px, var(--fs-28)); font-weight: var(--font-weight-bold);
+  line-height: 1.2; white-space: nowrap; text-align: left; cursor: pointer; vertical-align: middle; }
+.vbv-drive-mark:disabled { cursor: default; }
+.vbv-drive-mark:focus-visible { outline: var(--focus-outline); outline-offset: 2px; }
+.vbv-drive-mark-dot { flex: 0 0 12px; width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 0 0 1px #fff; background: #ff4d4d; }
+.vbv-drive-mark.is-ok .vbv-drive-mark-dot { background: var(--color-green); }
+.vbv-drive-mark.is-pick .vbv-drive-mark-dot { background: #ffd24d; }
+.vbv-drive-mark.is-off .vbv-drive-mark-dot { background: #ff4d4d; }
+.vbv-drive-mark-lab { overflow: hidden; text-overflow: clip; }
+/* m4.0: whole box coloured, high contrast (Robin 16 Nov) */
+.vbv-drive-mark.is-ok, .vbv-drive-mark.is-ok:disabled { background: #0a7d32; border-color: #ffffff; color: #ffffff; font-weight: 700; opacity: 1; }
+.vbv-drive-mark.is-off { background: #c62828; border-color: #ffffff; color: #ffffff; font-weight: 700; opacity: 1; }
+.vbv-drive-mark.is-pick { background: #ffd24d; border-color: #000000; color: #000000; font-weight: 700; opacity: 1; }
+.vbv-drive-mark .vbv-drive-mark-dot { display: none; }
+.vbv-track, .shell-progress { position: relative; height: calc(8 * var(--scale) * 1px); border: 0; box-shadow: inset 0 0 0 1px var(--color-fg);
+  border-radius: var(--radius-progress); background: var(--color-bg); margin: 6px 0 max(calc(14 * var(--scale) * 1px), 8px); overflow: hidden; box-sizing: border-box; }
+/* Designer 18:01/18:07 + KJBVR's fix 18:17: bar and fill are both 8 mock px x --scale (4 CSS px at 1024, 5.3 at 1366); the stroke is an inset box-shadow */
+.vbv-track i { position: absolute; left: 0; top: 0; bottom: 0; width: 0; min-width: 4px; background: var(--color-green); border-radius: calc(var(--radius-progress-fill-mock) * var(--scale) * 1px);
+  transition: width var(--motion-fade) ease; }
+.kjb-tabs { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: max(var(--space-tab-gap), 6px); max-width: none; padding-bottom: max(calc(var(--space-after-tabs-mock) * var(--scale) * 1px), 8px); }
+.kjb-tabs button { min-height: max(var(--space-tab-height), 44px); font-size: max(var(--fs-36), 17px); font-weight: var(--font-weight-bold); border-width: var(--border-width);
+  border-radius: var(--radius-tab); transition: background-color var(--motion-fade), color var(--motion-fade); }
+.kjb-tabs button:focus-visible { outline: var(--focus-outline); }
+@media (max-width: 600px) { .vbv-apptitle { font-size: 20px; } }
+/* shell buttons and panels follow the token radii (the apps' own buttons are unchanged) */
+.kjb-setbtn, .kjb-second, .kjb-primary { border-radius: var(--radius-button); }
+.kjb-panel, .kjb-mig { border-radius: var(--radius-panel); }
+.kjb-titlerow h1 { font-size: max(var(--fs-48), 24px); }
+/* Stitch tab empty state */
+.vbv-empty { margin-top: 8px; }
+.vbv-empty-h { margin: 0 0 6px; font-weight: var(--font-weight-bold); font-size: max(var(--fs-40), 20px); }
+/* slow fade between tabs (respects prefers-reduced-motion through --motion-fade) */
+[data-kjb-app]:not([hidden]) { animation: vbv-fade var(--motion-fade) ease; }
+@keyframes vbv-fade { from { opacity: 0; } to { opacity: 1; } }
+
+/* Designer 18:01: no red body text on black. The Tracker's stats line "Recorded, not yet posted" was red (#ef4444) on #111.
+   Text only; the red and green list buttons are untouched. */
+#app-tracker #recText { color: var(--color-fg); }
+
+/* m3.7: Progress status list (read-only, existing panel styling) */
+.vbv-status { margin-top: 8px; }
+.vbv-status-head { display: flex; justify-content: flex-end; margin: 0 0 10px; }
+.vbv-status-refresh { min-height: 44px; }
+.vbv-status-msg { margin: 0; font-size: max(16px, var(--fs-32)); }
+.vbv-status-list { list-style: none; margin: 0; padding: 0; }
+.vbv-status-row { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; padding: 12px 0; border-top: var(--border-width, 2px) solid var(--color-fg); font-size: max(18px, var(--fs-36)); }
+.vbv-status-row:first-child { border-top: 0; }
+.vbv-status-unit { font-weight: var(--font-weight-bold, 700); }
+.vbv-status-state { color: var(--color-muted); font-variant-numeric: tabular-nums; }
+
+/* ---- vbv-home.css ---- */
+/* VBV M2: verse map home + screen 02 (HANDOFF). Uses tokens.css variables. */
+/* inside the Tracker's centred .wrap: break out to the full width between the page margins, like the mock */
+#vbv-home { width: calc(100vw - 2 * max(var(--space-margin), 14px)); margin-left: calc(50% - 50vw + max(var(--space-margin), 14px)); box-sizing: border-box; padding: max(calc(10 * var(--scale) * 1px), 6px) 0 0; margin-top: 0; margin-bottom: 18px; }
+#app-tracker[data-view="map"] #vbv-home, #app-tracker[data-view="plan"] #vbv-home { display: none; }
+#vbv-home [hidden] { display: none !important; }
+.vbvh-quiet { font: inherit; font-size: max(var(--fs-28), 16px); background: #000; color: #fff; border: 2px solid var(--color-line); border-radius: var(--radius-current-row);
+  min-height: 44px; padding: 4px 18px; cursor: pointer; }
+.vbvh-quiet:focus-visible, .vbvh-row:focus-visible, .vbvh-btn:focus-visible { outline: var(--focus-outline); outline-offset: 2px; }
+.vbvh-h { font-size: max(var(--fs-44), 22px); font-weight: 700; margin: 10px 0 0; line-height: 1.25; }
+.vbvh-h:focus { outline: none; }
+.vbvh-sub, .vbvh-muted { color: var(--color-muted); font-size: max(var(--fs-28), 16px); margin: 2px 0 10px; }
+.vbvh-lgrid { display: grid; grid-template-columns: minmax(340px, 1fr) 2fr; gap: max(var(--space-col-gap), 14px); align-items: start; }
+@media (orientation: portrait), (max-width: 899px) { .vbvh-lgrid { grid-template-columns: 1fr; } }
+.vbvh-list { border: 2px solid var(--color-line); border-radius: var(--radius-panel); padding: 10px 12px; }
+.vbvh-rows { list-style: none; margin: 0; padding: 0; overflow-y: auto; }
+.vbvh-top { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-bottom: 8px; }
+.vbvh-top .vbvh-sub { margin-bottom: 4px; }
+.vbvh-top .vbvh-quiet { flex: none; margin-top: 0; }
+.vbvh-col { min-width: 0; }
+#vbv-home .vbvh-ref, #vbv-home .vbvh-row { white-space: nowrap; }
+.vbvh-top .vbvh-h { margin-top: 0; }
+@media (orientation: portrait), (max-width: 899px) { .vbvh-next { order: -1; } }
+.vbvh-row { font: inherit; width: 100%; display: flex; align-items: center; gap: 12px; background: transparent; color: #fff; border: 3px solid transparent;
+  border-radius: var(--radius-current-row); min-height: 44px; padding: 2px 8px; cursor: pointer; text-align: left; font-size: max(var(--fs-32), 16px); }
+.vbvh-row.is-next { border-color: #fff; }
+.vbvh-ref { font-weight: 700; flex: 1 1 auto; }
+.vbvh-word { font-size: max(var(--fs-28), 16px); }
+.w-rec { color: var(--color-green); } .w-none { color: var(--color-muted); } .w-next { color: #fff; font-weight: 700; } .w-failed { color: #fff; font-weight: 700; }
+.vbvh-dot { flex: none; width: max(calc(22 * var(--scale) * 1px), 20px); height: max(calc(22 * var(--scale) * 1px), 20px); border-radius: 50%; box-sizing: border-box;
+  display: inline-flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 700; line-height: 1; color: #fff; position: relative; }
+.vbvh-dot.is-none { border: 2px solid var(--color-muted); }
+.vbvh-dot.is-rec { background: var(--color-green); border: 2px solid var(--color-green); }
+.vbvh-dot.is-failed { border: 2px solid #fff; }
+.vbvh-dot.is-cur::after { content: ""; position: absolute; inset: -5px; border: 3px solid #fff; border-radius: 50%; }
+.vbvh-next { background: var(--color-panel); border: 2px solid #fff; border-radius: var(--radius-panel); padding: max(var(--space-panel-pad), 14px); display: flex; flex-direction: column; }
+.vbvh-nexth { font-size: max(var(--fs-44), 22px); font-weight: 700; margin: 0 0 10px; }
+.vbvh-verse { font-size: max(var(--fs-40), 40px); font-weight: 400; line-height: 1.35; margin: 0 0 16px; flex: 1 1 auto; }
+/* standing rule: verse text is at least 40 CSS px in landscape */
+.vbvh-btns { display: flex; flex-direction: row; gap: 14px; position: sticky; bottom: 0; background: var(--color-panel); padding: 8px 0 4px; }
+.vbvh-btns .vbvh-btn { flex: 1 1 50%; }
+@media (max-width: 600px) { .vbvh-btns { gap: 10px; } .vbvh-btns .vbvh-btn { min-height: 56px; padding: 4px 8px; } }
+.vbvh-btn { width: 100%; min-height: max(var(--btn-height), 56px); font-size: max(var(--fs-36), 18px); border-radius: var(--radius-button); }
+
+/* Designer 18:01: never truncate book names with an ellipsis (safety net over the dots-map bundle's own CSS) */
+#vbv-home .dm .dm-book .dm-nm { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+
+/* Designer 18:18: never justify. Left-aligned, normal word spacing, ragged right, everywhere; verse text above all. */
+#vbv-home .vbvh-verse, #vbv-home .vbvh-next, #vbv-home .vbvh-sub, #vbv-home .vbvh-muted { text-align: left; text-align-last: auto; word-spacing: normal; hyphens: manual; }
+#shell-top, #shell-main { text-align-last: auto; }
+
+/* Designer 18:50: hyphenated status words never break at the hyphen (white-space: nowrap); never U+2011. */
+#vbv-home .vbvh-word { white-space: nowrap; }
+
+/* v7 drop-in (Designer's whole-Bible list on a normal page scroll): insets for a fixed 'Back to my place' button. It sits at the bottom,
+   so it can never cover the tab bar (tabs are in the sticky header at the top); --dm-safe-top is there if the map pins anything at the top. */
+#vbvMap { --dm-safe-top: var(--kjb-top, 0px); --dm-safe-bottom: max(16px, env(safe-area-inset-bottom, 0px)); }
+#vbv-home { padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px)); } /* room so the fixed button never covers the last row */
+
+/* m3.1: keep the open chapter's Record button on screen when v7.1's panel is taller than the
+   remaining viewport (phone, key open, Genesis 1). Verse dots may scroll inside the panel; text never shrinks. */
+#vbvMap .dm-panel { overflow-y: auto; overscroll-behavior: contain; }
+#vbvMap .dm-btns { position: sticky; bottom: 0; z-index: 1; padding-top: 4px; padding-bottom: 2px; background: var(--color-panel, #111111); }
+
+/* m3.2 (Robin 20:17): grid of books first; tap a book for its chapters, each with its own Record button. 16px floor, never justified. */
+.vbvg-books { padding-top: 4px; }
+.vbvg-place { display: block; width: 100%; min-height: 56px; margin: 4px 0 6px; font-size: max(var(--fs-32), 18px); font-weight: 700; text-align: left; padding: 6px 16px; border-radius: var(--radius-button); }
+.vbvg-th { font-size: max(var(--fs-36), 20px); font-weight: 700; margin: 14px 0 8px; text-align: left; }
+.vbvg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 10px; }
+@media (max-width: 600px) { .vbvg-grid { grid-template-columns: 1fr 1fr; gap: 8px; } }
+.vbvg-book { font: inherit; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; min-height: 64px; padding: 8px 12px;
+  background: #000; color: #fff; border: 2px solid var(--color-line); border-radius: var(--radius-panel); cursor: pointer; text-align: left; }
+.vbvg-book.is-started { border-color: #fff; }
+.vbvg-book:focus-visible, .vbvg-recbtn:focus-visible, .vbvg-place:focus-visible, .vbvg-all:focus-visible { outline: var(--focus-outline); outline-offset: 2px; }
+.vbvg-bn { font-size: max(var(--fs-32), 18px); font-weight: 700; line-height: 1.25; overflow-wrap: normal; word-break: normal; hyphens: manual; }
+.vbvg-bc { font-size: 16px; color: var(--color-muted); white-space: nowrap; }
+.vbvg-book.is-done .vbvg-bc { color: var(--color-green); }
+.vbvg-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; margin: 4px 0 10px; }
+.vbvg-bar[hidden] { display: none; }
+.vbvg-h { font-size: max(var(--fs-44), 22px); font-weight: 700; margin: 0; line-height: 1.25; flex: 1 1 auto; }
+.vbvg-h:focus { outline: none; }
+.vbvg-sub { flex: 1 1 100%; margin: 0; color: var(--color-muted); font-size: max(var(--fs-28), 16px); text-align: left; }
+.vbvg-rec { padding: 2px 4px 8px 40px; border-bottom: 1px solid var(--color-line); margin-bottom: 4px; }
+/* m4.2 (Robin 16 Nov): Clear this chapter, a secondary danger button beside Record <chapter>; only shown when the chapter has recorded verses */
+#vbvMap .vbvg-clearbtn { font: inherit; font-family: 'OpenDyslexic', system-ui, sans-serif; min-height: 48px; font-size: 16px; font-weight: 700; padding: 4px 18px; margin-left: 12px; background: #000; color: #ff8a80; border: 2px solid #ff8a80; border-radius: var(--radius-button); white-space: nowrap; cursor: pointer; touch-action: manipulation; }
+#vbvMap .vbvg-clearbtn:focus-visible { outline: var(--focus-outline); outline-offset: 2px; }
+#vbvMap .vbvg-recbtn { font: inherit; font-family: 'OpenDyslexic', system-ui, sans-serif; display: inline-flex; align-items: center; justify-content: center; min-height: 48px;
+  font-size: 18px; font-weight: 700; padding: 4px 24px; background: #fff; color: #000; border: 2px solid #fff; border-radius: var(--radius-button); white-space: nowrap; cursor: pointer; touch-action: manipulation; }
+@media (max-width: 600px) { .vbvg-rec { padding-left: 4px; } #vbvMap .vbvg-recbtn { width: 100%; } #vbvMap .vbvg-clearbtn { width: 100%; margin: 8px 0 0; } }
+#vbv-home[data-vbv-level="chapters"] #vbvMap .dm-panel .dm-btns { display: none; } /* Record sits under each chapter instead */
+
+/* ---- vbv-phone.css ---- */
+/* Designer phone rule (18:36): at phone width the header is the title, the Drive signed-in marker, one progress line and the tabs.
+   The page scrolls normally: the map is never trapped in a fixed-height box. Tabs wrap at spaces only, never mid-word, never below 16px. */
+@media (max-width: 600px) {
+  #shell-top { padding: calc(6px + env(safe-area-inset-top, 0px)) 10px 0; }
+  .vbv-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; }
+  .vbv-apptitle { font-size: 20px; line-height: 1.2; white-space: nowrap; flex: 1 1 auto; }
+  .vbv-drive-mark { flex: 1 1 100%; width: 100%; min-width: 0; max-width: none; }
+  .vbv-progtext { text-align: left; line-height: 1.3; margin-top: 2px; flex: 1 1 100%; }
+  .vbv-track { margin: 4px 0 6px; }
+  /* three short tabs (Tracker, Recorder, Progress) fit one row at 16px */
+  .kjb-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 4px !important; padding-bottom: 6px !important; }
+  .kjb-tabs button { font-size: 16px !important; letter-spacing: 0 !important; padding: 2px 4px !important; min-height: 44px !important; }
+  /* the verse map comes first in the Tracker tab; the title row with Settings & info follows it (same button, same behaviour) */
+  #trkMain { display: flex; flex-direction: column; }
+  #trkMain > #vbv-home { order: -1; width: auto; margin-left: 0; }
+  #app-tracker[data-view="map"] #trkMain > #vbv-home, #app-tracker[data-view="plan"] #trkMain > #vbv-home { display: none; }
+  .vbvh-rows { max-height: none; overflow: visible; }
+  .vbvh-next { min-height: 0; }
+}
+
