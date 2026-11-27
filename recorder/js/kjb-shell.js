@@ -1,7 +1,7 @@
 /* Light page shell: event bus, one Google sign-in (same client and token key as live), wake lock, header height. */
 (function () {
   "use strict";
-  var BUILD = "recorder-light-20261124";
+  var BUILD = "recorder-sync-20261127";
   var KJB = window.KJB = { build: BUILD };
   var H = {};
   KJB.on = function (n, f) { (H[n] = H[n] || []).push(f); };
@@ -46,7 +46,7 @@
     TOKEN_KEY: "kjb1.google.token.v1",
     FILE: FILE,
     META: META,
-    SCOPE: FILE + " " + META,
+    SCOPE: FILE + " " + META + " openid email", // test-sync: openid email lets the same Google sign-in also open Firebase
     loadGis: function () {
       if (window.google && google.accounts && google.accounts.oauth2) return Promise.resolve();
       return gisP || (gisP = loadScript("https://accounts.google.com/gsi/client").catch(function (e) { gisP = null; throw e; }));

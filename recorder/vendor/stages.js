@@ -110,7 +110,9 @@ var VBVStages = (function () {
       if (!same(merged, doc)) { doc = merged; saveLocal(); }
     }
   } catch (e) {}
-  return { KEY: KEY, load: load, get: get, setVerse: setVerse, setUnit: setUnit, localStitch: localStitch, clearChapter: clearChapter, each: each, toArray: toArray, onChange: onChange, merge: merge,
+  // test-sync: fold another copy (the online save) into this device's store. Same merge as the save code: higher stage wins, never lowers.
+  function absorb(other) { load(); var m = merge(doc, valid(other) ? other : null); if (same(m, doc)) return false; doc = m; saveLocal(); emit(null); return true; }
+  return { absorb: absorb, valid: valid, KEY: KEY, load: load, get: get, setVerse: setVerse, setUnit: setUnit, localStitch: localStitch, clearChapter: clearChapter, each: each, toArray: toArray, onChange: onChange, merge: merge,
     pull: pull, push: push, slot: slot, code: code, setCode: setCode, CODEKEY: SYNCKEY, state: function () { return Object.assign({}, state); }, doc: function () { return JSON.parse(JSON.stringify(load())); } };
 })();
 

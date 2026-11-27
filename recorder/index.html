@@ -4,14 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="dark">
-  <title>Bible Reading Tracker and Recorder</title>
+  <title>Bible Recording Tracker</title>
   <link rel="stylesheet" href="vendor/tracker.css">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <header id="shell-top">
   <div class="vbv-head">
-    <p class="vbv-apptitle">Bible Reading Tracker</p>
+    <p class="vbv-apptitle">Bible Recording Tracker</p>
     <p class="vbv-progtext" id="vbvProgText" aria-live="off"></p>
   </div>
   <div class="vbv-track shell-progress" aria-hidden="true"><i id="vbvProgFill"></i></div>
@@ -71,16 +71,7 @@
   </div>
   <div class="kjb-dbody">
     <p class="kjb-dintro">Tap a heading to open it. Nothing here changes until you press its button.</p>
-    <details class="kjb-sec">
-      <summary><span class="t">Save code<span class="hint">Other devices</span></span></summary>
-      <div class="in">
-        <p>Type the same short phrase on every device. The verses you have recorded are then shared between them.</p>
-        <label for="vbvCode">Your save code</label>
-        <input id="vbvCode" type="text" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false">
-        <div class="kjb-stack"><button type="button" class="kjb-primary" id="vbvCodeUse">Use this code</button></div>
-        <p id="vbvCodeStatus" aria-live="polite"></p>
-      </div>
-    </details>
+    <p class="kjb-muted" id="onlineSave" aria-live="polite">Online save off</p>
     <details class="kjb-sec">
       <summary><span class="t">Verse text<span class="hint">Size, verse numbers</span></span></summary>
       <div class="in">
@@ -98,7 +89,7 @@
         <p>Each verse is saved to Drive 00 Inbox as soon as you tap Stop. A quick word check then flags only missing or added words, or silence.</p>
       </div>
     </details>
-    <p class="kjb-muted kjb-build">Build: <span id="buildLabel">recorder-light-20261124</span></p>
+    <p class="kjb-muted kjb-build">Build: <span id="buildLabel">recorder-sync-20261127</span></p>
   </div>
 </aside>
 
@@ -112,5 +103,6 @@
 <script src="vendor/vbv-home.js"></script>
 <script src="vendor/vbv-drive-mark.js"></script>
 <script src="js/app.js"></script>
+<script src="js/online-save.js?v=err1"></script>
 </body>
 </html>
