@@ -29,6 +29,9 @@
   }
   function why(e) {
     var s = String((e && (e.code || '')) + ' ' + (e && e.message || e || ''));
+    /* test-only: show the real error so we can see why Firebase refused */
+    var raw = s.replace(/ya29\.[\w.-]+/g, '[token]').replace(/\s+/g, ' ').trim().slice(0, 300);
+    return 'Online save off. Error: ' + (raw || 'unknown') + ' (Saved on this device.)';
     if (/audience|not authorized|INVALID_IDP_RESPONSE|invalid-credential|operation-not-allowed|CONFIGURATION_NOT_FOUND/i.test(s)) return 'Online save off (Firebase setting needed). Saved on this device.';
     if (/PERMISSION_DENIED|permission-denied|permission_denied/i.test(s)) return 'Online save off (database rule needed). Saved on this device.';
     if (/network|offline|unavailable|Failed to fetch|import/i.test(s)) return 'Online save off (no connection). Saved on this device.';
