@@ -25,11 +25,13 @@
   <li>Ruth 1 to 4</li>
   <li>Jonah 1 to 4</li>
   <li>Psalms 1 and 2</li>
+  <li>John 1 to 3</li>
 </ul>
 <p>It only adds marks. Anything already marked stays as it is, and nothing in Drive is touched.</p>
 <button type="button" id="go">Mark these as recorded</button>
 <div id="out" role="status" aria-live="polite"></div>
 <a class="go" id="open" href="../recorder/" hidden>Open the recorder</a>
+<p><a class="go" href="../recorder-test-sync/">Open the test recorder (saves online)</a></p>
 
 <script src="../recorder/vendor/stages.js"></script>
 <script>
@@ -40,7 +42,8 @@
     ['GEN', [31, 25, 24, 26, 32, 22, 24, 22, 29, 32]],
     ['RUT', [22, 23, 18, 22]],
     ['JON', [17, 10, 10, 11]],
-    ['PSA', [6, 12]]
+    ['PSA', [6, 12]],
+    ['JHN', [51, 25, 36]]
   ];
   var btn = document.getElementById('go'), out = document.getElementById('out'), open = document.getElementById('open');
   function say(t, cls) { out.className = cls || ''; out.textContent = t; }
