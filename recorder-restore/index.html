@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Restore recorded marks</title>
+<style>
+  body{font:20px/1.45 -apple-system,system-ui,sans-serif;margin:0;padding:28px 22px;max-width:640px;color:#111;background:#fff}
+  h1{font-size:26px;margin:0 0 12px}
+  ul{padding-left:22px;margin:8px 0 20px}
+  button{font:inherit;font-weight:600;padding:16px 22px;border-radius:12px;border:0;background:#111;color:#fff;width:100%}
+  button[disabled]{opacity:.5}
+  #out{margin-top:18px;min-height:2em}
+  .ok{color:#137a2a;font-weight:600}
+  .err{color:#b00020;font-weight:600}
+  a.go{display:block;text-align:center;margin-top:18px;padding:16px;border-radius:12px;background:#137a2a;color:#fff;text-decoration:none;font-weight:600}
+</style>
+</head>
+<body>
+<h1>Restore recorded marks</h1>
+<p>This marks these chapters as <b>Recorded</b> on the King James Voice Recorder on this device:</p>
+<ul>
+  <li>Genesis 1 to 10</li>
+  <li>Ruth 1 to 4</li>
+  <li>Jonah 1 to 4</li>
+  <li>Psalms 1 and 2</li>
+</ul>
+<p>It only adds marks. Anything already marked stays as it is, and nothing in Drive is touched.</p>
+<button type="button" id="go">Mark these as recorded</button>
+<div id="out" role="status" aria-live="polite"></div>
+<a class="go" id="open" href="../recorder/" hidden>Open the recorder</a>
+
+<script src="../recorder/vendor/stages.js"></script>
+<script>
+(function () {
+  'use strict';
+  // Verse counts from recorder/data/kjv-reading.json.gz (the page's own KJV data)
+  var LIST = [
+    ['GEN', [31, 25, 24, 26, 32, 22, 24, 22, 29, 32]],
+    ['RUT', [22, 23, 18, 22]],
+    ['JON', [17, 10, 10, 11]],
+    ['PSA', [6, 12]]
+  ];
+  var btn = document.getElementById('go'), out = document.getElementById('out'), open = document.getElementById('open');
+  function say(t, cls) { out.className = cls || ''; out.textContent = t; }
+  btn.addEventListener('click', function () {
+    btn.disabled = true;
+    var added = 0, kept = 0;
+    try {
+      LIST.forEach(function (b) {
+        b[1].forEach(function (n, ci) {
+          for (var v = 1; v <= n; v++) {
+            var id = b[0] + '.' + (ci + 1) + '.' + v, cur = VBVStages.get(id);
+            if (cur && (cur.st | 0) >= 1) { kept++; continue; } // already recorded or later: leave it exactly as it is
+            VBVStages.setVerse(id, { st: 1, restored: true });   // the recorder's own save (merges, never wipes)
+            added++;
+          }
+        });
+      });
+    } catch (e) { say('Something went wrong: ' + (e && e.message || e), 'err'); btn.disabled = false; return; }
+    var hasCode = !!VBVStages.code();
+    say('Saving\u2026');
+    Promise.resolve(hasCode ? VBVStages.pull() : null).then(function () {
+      var s = VBVStages.state();
+      var msg = 'Done. ' + added + ' verses marked as recorded' + (kept ? ', ' + kept + ' were already marked' : '') + '.';
+      if (hasCode) msg += s.error ? ' (Could not reach the shared copy just now; it will share next time the recorder opens.)' : ' Shared with your other devices.';
+      say(msg, 'ok');
+      btn.textContent = 'Done';
+      open.hidden = false;
+    });
+  });
+})();
+</script>
+</body>
+</html>
